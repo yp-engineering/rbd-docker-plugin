@@ -1,0 +1,20 @@
+{
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "network": "HOST",
+      "image": "docker-dev.yp.com/centos:centos6.6",
+      "parameters": [
+          { "key": "volume-driver", "value": "rbd" },
+          { "key": "volume", "value": "foo:/mnt/foo:rw" }
+      ]
+    },
+    "volumes": [ ]
+  },
+  "cmd": "(while : ; do uptime; sleep 10 ; done) | tee /mnt/foo/uptime.log",
+  "id": "plugin-demo",
+  "instances": 1,
+  "cpus": 0.5,
+  "mem": 256,
+  "uris": []
+}

@@ -1,0 +1,14 @@
+/var/log/rbd-docker-plugin.log {
+    missingok
+    weekly
+    rotate 10
+    delaycompress
+    compress
+    notifempty
+    # assuming centos 7.1 with systemd
+    postrotate
+        systemctl reload rbd-docker-plugin.service > /dev/null 2>/dev/null || true
+    endscript
+    notifempty
+}
+# NOTE: config is rbd-docker-plugin_logrotate to avoid clash with binary name and .gitignore

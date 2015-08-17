@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+set -u
+
+# rbd-docker-plugin postremove
+
+SYSTEMD_SVC=rbd-docker-plugin.service
+UPSTART_INIT=/etc/init/rbd-docker-plugin.conf
+LOGROTATE_CONF=/etc/logrotate.d/rbd-docker-plugin_logrotate
+
+# centos 7.x / systemd
+if UNIT_DIR=$(pkg-config systemd --variable=systemdsystemunitdir); then
+    # disable and unlink the systemd .service
+    systemctl disable ${SYSTEMD_SVC}
+    rm -vf "${UNIT_DIR}/${SYSTEMD_SVC}"
+else
+    # centos 6 / remove the upstart softlink
+    if test -L "$UPSTART_INIT" ; then
+        rm -f "$UPSTART_INIT"
+    fi
+fi
+
+# remove log config
+if test -f "$LOGROTATE_CONF" ; then
+    rm -vf "$LOGROTATE_CONF"
+fi
