@@ -37,6 +37,14 @@ uniquely named plugin instances with different default configurations.
 The default name for the socket is "rbd", so you would refer to 
 `--volume-driver rbd` from docker.
 
+General build/run requirements:
+* librados2-devel and librbd1-devel for go-ceph
+* /usr/bin/rbd for mapping and unmapping to kernel
+* /usr/sbin/mkfs.xfs for fs creation
+* /usr/bin/mount and /usr/bin/umount
+
+Tested with Ceph version 0.94.2 on Centos 7.1 host with Docker 1.8.
+
 ### Commandline Options
 
     Usage of ./rbd-docker-plugin:

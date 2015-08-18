@@ -1,4 +1,5 @@
-# building the rbd docker plugin golang binary
+# building the rbd docker plugin golang binary with version
+# makefile mostly used for packing a tpkg
 
 .PHONY: all build install clean test version setup
 
