@@ -3,7 +3,7 @@
     "type": "DOCKER",
     "docker": {
       "network": "HOST",
-      "image": "docker-dev.yp.com/centos:centos6.6",
+      "image": "centos:centos6.6",
       "parameters": [
           { "key": "volume-driver", "value": "rbd" },
           { "key": "volume", "value": "foo:/mnt/foo:rw" }
