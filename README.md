@@ -26,11 +26,16 @@
 ## Plugin Setup
 
 Plugin is a standalone process and places a Socket file in a known 
-location.  Generally need to start this before running Docker. 
+location.  Generally need to start this before running Docker.  It does 
+not daemonize as it is expected to be controlled by systemd, so if you 
+need it in the background, use normal shell process control (&).
 
 The socket has a name (sans .sock) which is used to refer to the plugin
 via the `--volume-driver=name` docker CLI option, allowing multiple
 uniquely named plugin instances with different default configurations.
+
+The default name for the socket is "rbd", so you would refer to 
+`--volume-driver rbd` from docker.
 
 ### Commandline Options
 
@@ -41,7 +46,7 @@ uniquely named plugin instances with different default configurations.
       --logdir="/var/log": Logfile directory for RBD Docker Plugin
       --mount="/var/lib/docker/volumes": Mount directory for volumes on host
       --name="rbd": Docker plugin name for use on --volume-driver option
-      --plugin-dir="/usr/share/docker/plugins": Docker plugin directory for socket
+      --plugin-dir="/run/docker/plugins": Docker plugin directory for socket
       --pool="rbd": Default Ceph Pool for RBD operations
       --remove=false: Can Remove (destroy) RBD Images (default: false, volume will be renamed zz_name)
       --size=20480: RBD Image size to Create (in MB) (default: 20480=20GB
@@ -50,10 +55,11 @@ uniquely named plugin instances with different default configurations.
 
 Start with the default options:
 
-* name=rbd, pool=rbd, user=admin, logfile=/var/log/rbd-docker-plugin.log
+* socket name=rbd, pool=rbd, user=admin, logfile=/var/log/rbd-docker-plugin.log
 * no creation or removal of volumes
 
     sudo rbd-docker-plugin
+    # docker run --volume-driver rbd -v ...
 
 For Debugging: send log to STDERR:
 
@@ -88,9 +94,9 @@ version](https://github.com/Soulou/curl-unix-socket) instead:
 
 Once you have that you can POST json to the plugin:
 
-    % sudo curl-unix-socket -v -X POST unix:///usr/share/docker/plugins/rbd.sock:/Plugin.Activate
+    % sudo curl-unix-socket -v -X POST unix:///run/docker/plugins/rbd.sock:/Plugin.Activate
     > POST /Plugin.Activate HTTP/1.1
-    > Socket: /usr/share/docker/plugins/rbd.sock
+    > Socket: /run/docker/plugins/rbd.sock
     > Content-Length: 0
     >
     < HTTP/1.1 200 OK
@@ -101,9 +107,9 @@ Once you have that you can POST json to the plugin:
 
 
     # Plugin started without --create:
-    % sudo curl-unix-socket -v -X POST -d '{"Name": "testimage"}' unix:///usr/share/docker/plugins/rbd.sock:/VolumeDriver.Create
+    % sudo curl-unix-socket -v -X POST -d '{"Name": "testimage"}' unix:///run/docker/plugins/rbd.sock:/VolumeDriver.Create
     > POST /VolumeDriver.Create HTTP/1.1
-    > Socket: /usr/share/docker/plugins/rbd.sock
+    > Socket: /run/docker/plugins/rbd.sock
     > Content-Length: 21
     >
     < HTTP/1.1 500 Internal Server Error
@@ -113,7 +119,7 @@ Once you have that you can POST json to the plugin:
     {"Mountpoint":"","Err":"Ceph RBD Image not found: testimage"}
 
     # Plugin started --create turned on will create unknown image:
-    % sudo curl-unix-socket -v -X POST -d '{"Name": "testimage"}' unix:///usr/share/docker/plugins/rbd.sock:/VolumeDriver.Create
+    % sudo curl-unix-socket -v -X POST -d '{"Name": "testimage"}' unix:///run/docker/plugins/rbd.sock:/VolumeDriver.Create
     > POST /VolumeDriver.Create HTTP/1.1
     > Socket: /run/docker/plugins/rbd.sock
     > Content-Length: 21
@@ -155,7 +161,6 @@ This plugin can create RBD images with XFS filesystem.
 * Resize RBD image:
   * set max size: `sudo rbd resize --size 2048 --image foo`
   * map/mount and then fix XFS: `sudo xfs_growfs -d /mnt/foo`
-* Remove image: `sudo rbd remove foo`
 
 ## TODO
 
@@ -180,12 +185,16 @@ This plugin can create RBD images with XFS filesystem.
 - GlusterFS Example: https://github.com/calavera/docker-volume-glusterfs
 - KeyWhiz example: https://github.com/calavera/docker-volume-keywhiz
 - Ceph Rados, RBD golang lib: https://github.com/noahdesu/go-ceph
-- partial Ceph example: https://github.com/AcalephStorage/docker-volume-ceph-rbd
+
+Related Projects
+- https://github.com/AcalephStorage/docker-volume-ceph-rbd
+- https://github.com/contiv/volplugin
 
 # Packaging
 
-Using http://tpkg.github.io package to distribute and specify native 
-package dependencies.  Tested with Centos 7.1 and yum/rpm packages.
+Using [tpkg](http://tpkg.github.io) package to distribute and specify 
+native package dependencies.  Tested with Centos 7.1 and yum/rpm 
+packages.
 
 
 # License
