@@ -395,7 +395,16 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	// check if it's in our mounts - we may not know about it if plugin was started late?
 	vol, found := d.volumes[mount]
 	if !found {
-		log.Println("WARN: Volume is not in known mounts: will attempt Unmount anyway: " + name)
+		log.Println("WARN: Volume is not in known mounts: will attempt limited Unmount: " + name)
+		// set up a fake Volume with defaults ...
+		// - device is /dev/rbd/<pool>/<image> in newer ceph versions
+		// - assume we are the locker (will fail if locked from another host)
+		vol = &volume{
+			pool:   pool,
+			name:   name,
+			device: fmt.Sprintf("/dev/rbd/%s/%s", pool, name),
+			locker: d.localLockerCookie(),
+		}
 	}
 
 	// unmount
@@ -418,7 +427,6 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	err = d.unlockImage(vol.pool, vol.name, vol.locker)
 	if err != nil {
 		log.Printf("ERROR: unlocking RBD image(%s): %s", vol.name, err)
-		// return dkvolume.Response{Err: "Error unlocking device"}
 		err_msgs = append(err_msgs, "Error unlocking image")
 	}
 
@@ -747,16 +755,22 @@ func (d *cephRBDVolumeDriver) lockImage(pool, imagename string) (string, error) 
 	defer rbdImage.Close()
 
 	// lock it using hostname
+	locker := d.localLockerCookie()
+	err = rbdImage.LockExclusive(locker)
+	if err != nil {
+		return locker, err
+	}
+	return locker, nil
+}
+
+// localLockerCookie returns the Hostname
+func (d *cephRBDVolumeDriver) localLockerCookie() string {
 	host, err := os.Hostname()
 	if err != nil {
 		log.Printf("WARN: HOST_UNKNOWN: unable to get hostname: %s", err)
 		host = "HOST_UNKNOWN"
 	}
-	err = rbdImage.LockExclusive(host)
-	if err != nil {
-		return host, err
-	}
-	return host, nil
+	return host
 }
 
 // unlockImage releases the exclusive lock on an image
