@@ -41,7 +41,6 @@ import (
 )
 
 var (
-	fsTypeRegexp    = regexp.MustCompile(`TYPE="([^"]+)"`)                                       // fs type from blkid
 	imageNameRegexp = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)(@([0-9]+))?$`) // optional pool or size in image name
 )
 
@@ -853,14 +852,13 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 // deviceType identifies Image FS Type - requires RBD image to be mapped to kernel device
 func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 	// blkid Output:
-	//	/dev/rbd3: TYPE="xfs"
-	blkid, err := sh("blkid", "-s", "TYPE", device)
+	//	/dev/rbd3: xfs
+	blkid, err := sh("blkid", "-o", "value", "-s", "TYPE", device)
 	if err != nil {
 		return "", err
 	}
-	matches := fsTypeRegexp.FindStringSubmatch(blkid)
-	if len(matches) > 1 {
-		return matches[1], nil
+	if blkid != "" {
+		return blkid, nil
 	} else {
 		return "", errors.New("Unable to determine device fs type from blkid")
 	}
