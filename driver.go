@@ -214,6 +214,11 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 
 	// attempt to gain lock before remove - lock disappears after rm or rename
 	locker, err := d.lockImage(pool, name)
+	if err != nil {
+		errString := fmt.Sprintf("Unable to lock image for remove: %s", name)
+		log.Println("ERROR: " + errString)
+		return dkvolume.Response{Err: errString}
+	}
 
 	if *canRemoveVolumes {
 		// remove it (for real - destroy it ... )
