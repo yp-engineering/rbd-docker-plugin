@@ -1,7 +1,7 @@
 // Copyright 2015 YP Holdings LLC.
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
-package main
+package main // import "github.com/yp-engineering/rbd-docker-plugin"
 
 // Ceph RBD VolumeDriver Docker Plugin, setup config and go
 
@@ -19,10 +19,8 @@ import (
 )
 
 var (
-	VERSION     string // filled on build
-	versionFlag = flag.Bool("version", false, "Print version")
-
 	// Plugin Option Flags
+	versionFlag        = flag.Bool("version", false, "Print version")
 	pluginName         = flag.String("name", "rbd", "Docker plugin name for use on --volume-driver option")
 	cephUser           = flag.String("user", "admin", "Ceph user")
 	cephConfigFile     = flag.String("config", "", "Ceph cluster config") // more likely to have config file pointing to cluster
@@ -51,9 +49,6 @@ func logfilePath() string {
 
 func main() {
 	if *versionFlag {
-		if VERSION == "" {
-			VERSION = "UNKNOWN"
-		}
 		fmt.Printf("%s\n", VERSION)
 		return
 	}

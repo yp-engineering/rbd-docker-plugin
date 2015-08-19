@@ -8,7 +8,7 @@ INSTALL ?= install
 
 
 BINARY=rbd-docker-plugin
-PKG_SRC=main.go driver.go
+PKG_SRC=main.go driver.go version.go
 PKG_SRC_TEST=$(PKG_SRC) driver_test.go
 
 PACKAGE_BUILD=$(TMPDIR)/$(BINARY).tpkg.buildtmp
@@ -33,15 +33,15 @@ setup:
 	go get -t .
 	sudo yum install -y librados2-devel librbd1-devel
 
-# set VERSION from package file, eval into Makefile
-version: tpkg.yml
-	$(eval VERSION := $(shell grep "^version:" tpkg.yml | cut -f2 -d" "))
+# set VERSION from version.go, eval into Makefile for inclusion into tpkg.yml
+version: version.go
+	$(eval VERSION := $(shell grep "VERSION" version.go | cut -f2 -d'"'))
 
 build: $(BINARY)
 
 # this just builds local binary
-$(BINARY): version $(PKG_SRC)
-	go build -ldflags "-X main.VERSION $(VERSION)" -v -x .
+$(BINARY): $(PKG_SRC)
+	go build -v -x .
 
 # this will install binary in your GOPATH
 install: build test
@@ -58,7 +58,7 @@ test:
 
 # build relocatable tpkg
 # TODO: repair PATHS at install to set TPKG_HOME (assumed /home/ops)
-package: build test
+package: version build test
 	$(RM) -fr $(PACKAGE_BUILD)
 	mkdir -p $(PACKAGE_BIN_DIR) $(PACKAGE_INIT_DIR) $(PACKAGE_SYSTEMD_DIR) $(PACKAGE_LOG_CONFIG_DIR)
 	$(INSTALL) $(PACKAGE_SCRIPT_FILES) $(PACKAGE_BUILD)/.
@@ -67,4 +67,5 @@ package: build test
 	$(INSTALL) -m 0644 $(PACKAGE_INIT) $(PACKAGE_INIT_DIR)/.
 	$(INSTALL) -m 0644 $(PACKAGE_LOG_CONFIG) $(PACKAGE_LOG_CONFIG_DIR)/.
 	$(INSTALL) $(BINARY) $(PACKAGE_BIN_DIR)/.
+	sed -i "s/version:.*/version: $(VERSION)/" $(PACKAGE_BUILD)/tpkg.yml
 	tpkg --make $(PACKAGE_BUILD) --out $(CURDIR)
