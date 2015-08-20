@@ -811,7 +811,7 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
-	return sh("rbd", "map", "--pool", pool, imagename)
+	return sh("rbd", "map", "--id", d.user, "--pool", pool, imagename)
 }
 
 // unmapImageDevice will release the mapped kernel device
