@@ -644,6 +644,7 @@ func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int,
 	//	"--image-features", strconv.Itoa(4),
 	_, err = sh(
 		"rbd", "create",
+		"--id", d.user,
 		"--pool", pool,
 		"--image-format", strconv.Itoa(2),
 		"--size", strconv.Itoa(size),
@@ -815,6 +816,7 @@ func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
 }
 
 // unmapImageDevice will release the mapped kernel device
+// TODO: does this operation even require a user --id ? I can unmap a device without or with a different id and rbd doesn't seem to care
 func (d *cephRBDVolumeDriver) unmapImageDevice(device string) error {
 	_, err := sh("rbd", "unmap", device)
 	return err
@@ -827,6 +829,7 @@ func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 	// remove the block device image
 	_, err := sh(
 		"rbd", "rm",
+		"--id", d.user,
 		"--pool", pool,
 		name,
 	)
@@ -842,6 +845,7 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 
 	_, err := sh(
 		"rbd", "rename",
+		"--id", d.user,
 		"--pool", pool,
 		name,
 		newname,
