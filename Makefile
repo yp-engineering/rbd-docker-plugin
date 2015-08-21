@@ -54,7 +54,10 @@ uninstall:
 	@$(RM) -iv `which $(BINARY)`
 
 test:
-	go test
+	TMP_DIR=$$(mktemp -d) && \
+		./micro-osd.sh $$TMP_DIR && \
+		export CEPH_CONF=$${TMP_DIR}/ceph.conf && \
+		go test
 
 dist:
 	mkdir dist
@@ -68,6 +71,9 @@ systemd: dist
 make/%: build_docker
 	$(SUDO) docker run ${DOCKER_ARGS} --rm -i $(IMAGE) make $*
 
+run:
+	$(SUDO) docker run ${DOCKER_ARGS} --rm -it $(IMAGE)
+
 build_docker:
 	$(SUDO) docker build -t $(IMAGE) .
 
@@ -76,6 +82,13 @@ binary_from_container:
 		-v $${PWD}:/rbd-docker-plugin/dist \
 		-w /rbd-docker-plugin \
 		$(IMAGE) make build
+
+local:
+	$(SUDO) docker run ${DOCKER_ARGS} --rm -it \
+		-v $${PWD}:/rbd-docker-plugin \
+		-w /rbd-docker-plugin \
+		$(IMAGE)
+
 
 # container actions
 test_from_container: make/test
