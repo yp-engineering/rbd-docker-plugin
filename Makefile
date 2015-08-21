@@ -1,10 +1,16 @@
 # building the rbd docker plugin golang binary with version
 # makefile mostly used for packing a tpkg
 
-.PHONY: all build install clean test version setup
+.PHONY: all build install clean test version setup systemd
 
-TMPDIR ?= /tmp
-INSTALL ?= install
+IMAGE_PATH=ypengineering/rbd-docker-plugin
+TAG?=latest
+IMAGE=$(IMAGE_PATH):$(TAG)
+SUDO?=
+
+
+TMPDIR?=/tmp
+INSTALL?=install
 
 
 BINARY=rbd-docker-plugin
@@ -25,25 +31,19 @@ PACKAGE_LOG_CONFIG=logrotate.d/rbd-docker-plugin_logrotate
 PACKAGE_CONFIG_FILES=tpkg.yml README.md LICENSE
 PACKAGE_SCRIPT_FILES=postinstall postremove
 
+# Run these if you have a local dev env setup, otherwise they will / can be run
+# in the container.
 all: build
-
-# need to install the devel packages to compile go-ceph code
-# TODO: test if package already installed before calling sudo
-setup:
-	go get -t .
-	sudo yum install -y librados2-devel librbd1-devel
 
 # set VERSION from version.go, eval into Makefile for inclusion into tpkg.yml
 version: version.go
 	$(eval VERSION := $(shell grep "VERSION" version.go | cut -f2 -d'"'))
 
-build: $(BINARY)
+build: dist/$(BINARY)
 
-# this just builds local binary
-$(BINARY): $(PKG_SRC)
-	go build -v -x .
+dist/$(BINARY): $(PKG_SRC)
+	go build -v -x -o dist/$(BINARY) .
 
-# this will install binary in your GOPATH
 install: build test
 	go install .
 
@@ -55,6 +55,32 @@ uninstall:
 
 test:
 	go test
+
+dist:
+	mkdir dist
+
+systemd: dist
+	cp systemd/rbd-docker-plugin.service dist/
+
+
+
+# Used to have build env be inside container and to pull out the binary.
+make/%: build_docker
+	$(SUDO) docker run ${DOCKER_ARGS} --rm -i $(IMAGE) make $*
+
+build_docker:
+	$(SUDO) docker build -t $(IMAGE) .
+
+binary_from_container:
+	$(SUDO) docker run ${DOCKER_ARGS} --rm -it \
+		-v $${PWD}:/rbd-docker-plugin/dist \
+		-w /rbd-docker-plugin \
+		$(IMAGE) make build
+
+# container actions
+test_from_container: make/test
+
+
 
 # build relocatable tpkg
 # TODO: repair PATHS at install to set TPKG_HOME (assumed /home/ops)
