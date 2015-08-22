@@ -6,9 +6,11 @@ package main
 // unit tests that don't rely on ceph
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/calavera/dkvolume"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,13 +23,30 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	// make an empty driver ...
-	testDriver = cephRBDVolumeDriver{
-		name:        "test",
-		defaultPool: "testpool",
-	}
+	cephConf := os.Getenv("CEPH_CONF")
+
+	testDriver = newCephRBDVolumeDriver(
+		"test",
+		"",
+		"admin",
+		"rbd",
+		dkvolume.DefaultDockerRootDirectory,
+		cephConf,
+	)
+	defer testDriver.shutdown()
 
 	os.Exit(m.Run())
+}
+
+func TestRbdImageExists_noName(t *testing.T) {
+	f_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "")
+	assert.Equal(t, false, f_bool, fmt.Sprintf("%s", err))
+}
+
+func TestRbdImageExists_withName(t *testing.T) {
+	testDriver.createRBDImage("rbd", "foo", 1, "xfs")
+	t_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "foo")
+	assert.Equal(t, true, t_bool, fmt.Sprintf("%s", err))
 }
 
 // cephRBDDriver.parseImagePoolNameSize(string) (string, string, int, error)

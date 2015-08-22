@@ -57,6 +57,7 @@ test:
 	TMP_DIR=$$(mktemp -d) && \
 		./micro-osd.sh $$TMP_DIR && \
 		export CEPH_CONF=$${TMP_DIR}/ceph.conf && \
+		ceph -s && \
 		go test
 
 dist:
