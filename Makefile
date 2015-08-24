@@ -58,7 +58,8 @@ test:
 		./micro-osd.sh $$TMP_DIR && \
 		export CEPH_CONF=$${TMP_DIR}/ceph.conf && \
 		ceph -s && \
-		go test
+		go test -v && \
+		rm -rf $$TMP_DIR
 
 dist:
 	mkdir dist

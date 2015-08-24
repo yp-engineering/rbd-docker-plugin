@@ -38,23 +38,42 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestDriverReload(t *testing.T) {
+	t.Skip("This causes an error at driver.go:755 rbdImage.Open()")
+	testDriver.reload()
+}
+
+func TestLocalLockerCookie(t *testing.T) {
+	assert.NotEqual(t, "HOST_UNKNOWN", testDriver.localLockerCookie())
+}
+
 func TestRbdImageExists_noName(t *testing.T) {
 	f_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "")
 	assert.Equal(t, false, f_bool, fmt.Sprintf("%s", err))
 }
 
+func TestSh_success(t *testing.T) {
+	out, err := sh("ls")
+	assert.Nil(t, err, formatError("sh", err))
+	assert.Contains(t, out, "driver_test.go")
+}
+
+func TestSh_fail(t *testing.T) {
+	_, err := sh("false")
+	assert.NotNil(t, err, formatError("false", err))
+}
+
 func TestRbdImageExists_withName(t *testing.T) {
-	testDriver.createRBDImage("rbd", "foo", 1, "xfs")
+	// Fails because can't mount into docker image cause lack of kernel headers.
+	err := testDriver.createRBDImage("rbd", "foo", 1, "xfs")
+	assert.Nil(t, err, formatError("createRBDImage", err))
 	t_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "foo")
 	assert.Equal(t, true, t_bool, fmt.Sprintf("%s", err))
 }
 
 // cephRBDDriver.parseImagePoolNameSize(string) (string, string, int, error)
 func TestParseImagePoolNameSize_name(t *testing.T) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize("foo")
-	if err != nil {
-		t.Errorf("ERROR calling parseImagePoolNameSize: %s", err)
-	}
+	pool, name, size := parseImageAndHandleError(t, "foo")
 
 	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
@@ -62,41 +81,43 @@ func TestParseImagePoolNameSize_name(t *testing.T) {
 }
 
 func TestParseImagePoolNameSize_complexName(t *testing.T) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize("es-data1_v2.3")
-	if err != nil {
-		t.Errorf("ERROR calling parseImagePoolNameSize: %s", err)
-	}
+	pool, name, size := parseImageAndHandleError(t, "es-data1_v2.3")
+
 	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
 	assert.Equal(t, "es-data1_v2.3", name, "Name should be same")
 	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
 }
 
 func TestParseImagePoolNameSize_withPool(t *testing.T) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize("liverpool/foo")
-	if err != nil {
-		t.Errorf("ERROR calling parseImagePoolNameSize: %s", err)
-	}
+	pool, name, size := parseImageAndHandleError(t, "liverpool/foo")
+
 	assert.Equal(t, "liverpool", pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
 	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
 }
 
 func TestParseImagePoolNameSize_withSize(t *testing.T) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize("liverpool/foo@1024")
-	if err != nil {
-		t.Errorf("ERROR calling parseImagePoolNameSize: %s", err)
-	}
+	pool, name, size := parseImageAndHandleError(t, "liverpool/foo@1024")
+
 	assert.Equal(t, "liverpool", pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
 	assert.Equal(t, 1024, size, "Size should be same")
 }
 
 func TestParseImagePoolNameSize_withPoolAndSize(t *testing.T) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize("foo@1024")
-	if err != nil {
-		t.Errorf("ERROR calling parseImagePoolNameSize: %s", err)
-	}
+	pool, name, size := parseImageAndHandleError(t, "foo@1024")
+
 	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
 	assert.Equal(t, 1024, size, "Size should be same")
+}
+
+func formatError(name string, err error) string {
+	return fmt.Sprintf("ERROR calling %s: %s", name, err)
+}
+
+func parseImageAndHandleError(t *testing.T, name string) (string, string, int) {
+	pool, name, size, err := testDriver.parseImagePoolNameSize(name)
+	assert.Nil(t, err, formatError("parseImagePoolNameSize", err))
+	return pool, name, size
 }
