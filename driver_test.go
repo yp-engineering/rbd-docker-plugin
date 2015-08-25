@@ -7,117 +7,45 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"strconv"
 	"testing"
 
-	"github.com/calavera/dkvolume"
 	"github.com/stretchr/testify/assert"
 )
 
-// TODO: tests that need ceph
-// make fake cluster?
-// use dockerized container with ceph for tests?
+// http://stackoverflow.com/a/6878625
+const MaxUint = ^uint(0)
+const MaxInt = int(^uint(0) >> 1)
 
-var (
-	testDriver cephRBDVolumeDriver
-)
+func TestParseImagePoolNameSize(t *testing.T) {
+	td := cephRBDVolumeDriver{}
+	dp := "mypool"
+	td.defaultPool = dp
+	s := *defaultImageSizeMB
 
-func TestMain(m *testing.M) {
-	cephConf := os.Getenv("CEPH_CONF")
+	tcs := []struct {
+		input string
+		pool  string
+		name  string
+		size  int
+		err   error
+	}{
+		{"foo", dp, "foo", s, nil},
+		{"es-data1_v2.3", dp, "es-data1_v2.3", s, nil},
+		{"liverpool/foo", "liverpool", "foo", s, nil},
+		{"liverpool/foo@1024", "liverpool", "foo", 1024, nil},
+		{"foo@1024", dp, "foo", 1024, nil},
+		{"foo@", "", "", 0, fmt.Errorf("Unable to parse image name: foo@")},
+		// Max int converts to default
+		{"foo@" + strconv.Itoa(MaxInt) + "0", dp, "foo", s, nil},
+	}
 
-	testDriver = newCephRBDVolumeDriver(
-		"test",
-		"",
-		"admin",
-		"rbd",
-		dkvolume.DefaultDockerRootDirectory,
-		cephConf,
-	)
-	defer testDriver.shutdown()
+	for _, tc := range tcs {
+		pool, name, size, err := td.parseImagePoolNameSize(tc.input)
 
-	os.Exit(m.Run())
-}
-
-func TestDriverReload(t *testing.T) {
-	t.Skip("This causes an error at driver.go:755 rbdImage.Open()")
-	testDriver.reload()
-}
-
-func TestLocalLockerCookie(t *testing.T) {
-	assert.NotEqual(t, "HOST_UNKNOWN", testDriver.localLockerCookie())
-}
-
-func TestRbdImageExists_noName(t *testing.T) {
-	f_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "")
-	assert.Equal(t, false, f_bool, fmt.Sprintf("%s", err))
-}
-
-func TestSh_success(t *testing.T) {
-	out, err := sh("ls")
-	assert.Nil(t, err, formatError("sh", err))
-	assert.Contains(t, out, "driver_test.go")
-}
-
-func TestSh_fail(t *testing.T) {
-	_, err := sh("false")
-	assert.NotNil(t, err, formatError("false", err))
-}
-
-func TestRbdImageExists_withName(t *testing.T) {
-	// Fails because can't mount into docker image cause lack of kernel headers.
-	err := testDriver.createRBDImage("rbd", "foo", 1, "xfs")
-	assert.Nil(t, err, formatError("createRBDImage", err))
-	t_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "foo")
-	assert.Equal(t, true, t_bool, fmt.Sprintf("%s", err))
-}
-
-// cephRBDDriver.parseImagePoolNameSize(string) (string, string, int, error)
-func TestParseImagePoolNameSize_name(t *testing.T) {
-	pool, name, size := parseImageAndHandleError(t, "foo")
-
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
-	assert.Equal(t, "foo", name, "Name should be same")
-	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
-}
-
-func TestParseImagePoolNameSize_complexName(t *testing.T) {
-	pool, name, size := parseImageAndHandleError(t, "es-data1_v2.3")
-
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
-	assert.Equal(t, "es-data1_v2.3", name, "Name should be same")
-	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
-}
-
-func TestParseImagePoolNameSize_withPool(t *testing.T) {
-	pool, name, size := parseImageAndHandleError(t, "liverpool/foo")
-
-	assert.Equal(t, "liverpool", pool, "Pool should be same")
-	assert.Equal(t, "foo", name, "Name should be same")
-	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
-}
-
-func TestParseImagePoolNameSize_withSize(t *testing.T) {
-	pool, name, size := parseImageAndHandleError(t, "liverpool/foo@1024")
-
-	assert.Equal(t, "liverpool", pool, "Pool should be same")
-	assert.Equal(t, "foo", name, "Name should be same")
-	assert.Equal(t, 1024, size, "Size should be same")
-}
-
-func TestParseImagePoolNameSize_withPoolAndSize(t *testing.T) {
-	pool, name, size := parseImageAndHandleError(t, "foo@1024")
-
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
-	assert.Equal(t, "foo", name, "Name should be same")
-	assert.Equal(t, 1024, size, "Size should be same")
-}
-
-func formatError(name string, err error) string {
-	return fmt.Sprintf("ERROR calling %s: %s", name, err)
-}
-
-func parseImageAndHandleError(t *testing.T, name string) (string, string, int) {
-	pool, name, size, err := testDriver.parseImagePoolNameSize(name)
-	assert.Nil(t, err, formatError("parseImagePoolNameSize", err))
-	return pool, name, size
+		assert.Equal(t, tc.err, err, "%s: error (%v)", tc.input, err)
+		assert.Equal(t, tc.pool, pool, "input %s: pool %#v wanted, got %#v", tc.input, tc.pool, pool)
+		assert.Equal(t, tc.name, name, "input %s: name %#v wanted, got %#v", tc.input, tc.name, name)
+		assert.Equal(t, tc.size, size, "input %s: size %#d wanted, got %#d", tc.input, tc.size, size)
+	}
 }
