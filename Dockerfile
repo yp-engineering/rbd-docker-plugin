@@ -2,6 +2,7 @@ FROM golang:1.4.2-wheezy
 
 MAINTAINER Adam Avilla <aavilla@yp.com>
 
+
 # Install Ceph.
 ENV CEPH_VERSION hammer
 RUN curl -sSL 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | \
@@ -12,10 +13,8 @@ RUN apt-get update && \
     apt-get install -y --force-yes \
         librados-dev \
         librbd-dev \
-        ceph \
-        && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+        ceph
+
 
 ENV SRC_ROOT /go/src/github.com/yp-engineering/rbd-docker-plugin
 
@@ -30,5 +29,11 @@ RUN go get -t .
 
 # Add the rest of the files.
 ADD . ${SRC_ROOT}
+
+
+# Clean up all the apt stuff
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 
 CMD ["bash"]
