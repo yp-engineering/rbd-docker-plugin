@@ -209,4 +209,4 @@ packages.
 
 This project is using the MIT License (MIT), see LICENSE file.
 
-Copyright (c) 2015 YP Holdings LLC
+Copyright (c) 2015 YP LLC
