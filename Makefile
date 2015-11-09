@@ -107,6 +107,6 @@ package: version build test
 	$(INSTALL) -m 0644 $(PACKAGE_SYSTEMD_UNIT) $(PACKAGE_SYSTEMD_DIR)/.
 	$(INSTALL) -m 0644 $(PACKAGE_INIT) $(PACKAGE_INIT_DIR)/.
 	$(INSTALL) -m 0644 $(PACKAGE_LOG_CONFIG) $(PACKAGE_LOG_CONFIG_DIR)/.
-	$(INSTALL) $(BINARY) $(PACKAGE_BIN_DIR)/.
-	sed -i "s/version:.*/version: $(VERSION)/" $(PACKAGE_BUILD)/tpkg.yml
+	$(INSTALL) dist/$(BINARY) $(PACKAGE_BIN_DIR)/.
+	sed -i "s/^version:.*/version: $(VERSION)/" $(PACKAGE_BUILD)/tpkg.yml
 	tpkg --make $(PACKAGE_BUILD) --out $(CURDIR)

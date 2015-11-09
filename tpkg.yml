@@ -1,6 +1,6 @@
 name: rbd-docker-plugin
 version: main.VERSION
-#package_version: 1
+package_version: 1
 maintainer: aavilla@yp.com
 description: A Docker VolumeDriver Plugin that can manipulate Ceph RBD images.
 # RPMS needed for Ceph .so libs

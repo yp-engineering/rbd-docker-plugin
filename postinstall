@@ -13,13 +13,16 @@ LOGROTATE_CONF=$TPKG_HOME/etc/logrotate.d/rbd-docker-plugin_logrotate
 
 # centos 7.x / systemd
 if UNIT_DIR=$(pkg-config systemd --variable=systemdsystemunitdir); then
-    # copy the systemd .service and enable it
+    # copy the systemd .service (symlink won't work here)
     install -m 0644 -v "$SYSTEMD_CONF" "${UNIT_DIR}/${SYSTEMD_SERVICE}"
-    systemctl enable rbd-docker-plugin.service
+    # enable and start it
+    systemctl enable ${SYSTEMD_SERVICE}
+    systemctl start  ${SYSTEMD_SERVICE}
 else
     # centos 6 / upstart
     # link the /etc/init configuration file
     ln -s "$UPSTART_CONF" /etc/init/rbd-docker-plugin.conf
+    start rbd-docker-plugin
 fi
 
 # logrotate config

@@ -1,7 +1,7 @@
 // Copyright 2015 YP LLC.
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
-package main // import "github.com/yp-engineering/rbd-docker-plugin"
+package main
 
 // Ceph RBD VolumeDriver Docker Plugin, setup config and go
 
