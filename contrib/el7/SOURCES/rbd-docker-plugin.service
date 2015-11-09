@@ -1,0 +1,14 @@
+# systemd config for rbd-docker-plugin
+[Unit]
+Description=Ceph RBD Docker VolumeDriver Plugin
+Wants=docker.service
+Before=docker.service
+
+[Service]
+ExecStart=/usr/bin/rbd-docker-plugin-wrapper
+Restart=on-failure
+# NOTE: this kill is not synchronous as recommended by systemd *shrug*
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
