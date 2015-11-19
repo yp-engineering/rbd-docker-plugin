@@ -8,7 +8,8 @@ Before=docker.service
 ExecStart=/home/ops/bin/rbd-docker-plugin --create --plugins /run/docker/plugins
 Restart=on-failure
 # NOTE: this kill is not synchronous as recommended by systemd *shrug*
-ExecReload=/bin/kill -HUP $MAINPID
+# disabled for now - having odd plugin issues on reload need to debug further
+#ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]
 WantedBy=multi-user.target

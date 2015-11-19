@@ -476,7 +476,7 @@ func (d *cephRBDVolumeDriver) reload() {
 
 // connect builds up the ceph conn and default pool
 func (d *cephRBDVolumeDriver) connect() {
-	log.Println("INFO: connecting to Ceph and default pool context")
+	log.Println("INFO: connect() to Ceph")
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -635,6 +635,8 @@ func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int,
 		msg := fmt.Sprintf("Unable to find mkfs for %s in PATH: %s", fstype, err)
 		return errors.New(msg)
 	}
+
+	// TODO: use the go-ceph Create(..) func for this
 
 	// create the block device image with format=2
 	//  should we enable all v2 image features?: +1: layering support +2: striping v2 support +4: exclusive locking support +8: object map support
