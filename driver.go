@@ -399,7 +399,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	// check if it's in our mounts - we may not know about it if plugin was started late?
 	vol, found := d.volumes[mount]
 	if !found {
-		log.Println("WARN: Volume is not in known mounts: will attempt limited Unmount: " + name)
+		log.Printf("WARN: Volume is not in known mounts: will attempt limited Unmount: %s/%s", pool, name)
 		// set up a fake Volume with defaults ...
 		// - device is /dev/rbd/<pool>/<image> in newer ceph versions
 		// - assume we are the locker (will fail if locked from another host)
