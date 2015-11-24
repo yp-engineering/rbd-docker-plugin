@@ -72,7 +72,7 @@ type cephRBDVolumeDriver struct {
 	config      string             // ceph config file to read
 	volumes     map[string]*Volume // track locally mounted volumes
 	m           *sync.Mutex        // mutex to guard operations that change volume maps or use conn
-	conn        *rados.Conn        // create a connection for API operations
+	conn        *rados.Conn        // create a connection for each API operation
 	ioctx       *rados.IOContext   // context for requested pool
 }
 
@@ -140,7 +140,14 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 		return dkvolume.Response{}
 	}
 
-	// otherwise, check ceph rbd api for it
+	// otherwise, connect to Ceph and check ceph rbd api for it
+	err = d.connect(pool)
+	if err != nil {
+		log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	defer d.shutdown()
+
 	exists, err := d.rbdImageExists(pool, name)
 	if err != nil {
 		log.Printf("ERROR: checking for RBD Image: %s", err)
@@ -193,7 +200,14 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 		log.Printf("WARN: Volume is not in known mounts: %s", mount)
 	}
 
-	// check ceph rbd api for it
+	// connect to Ceph and check ceph rbd api for it
+	err = d.connect(pool)
+	if err != nil {
+		log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	defer d.shutdown()
+
 	exists, err := d.rbdImageExists(pool, name)
 	if err != nil {
 		log.Printf("ERROR: checking for RBD Image: %s", err)
@@ -266,7 +280,16 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 
 	mount := d.mountpoint(pool, name)
 
-	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
+	// connect to Ceph so we can manipulate RBD Image
+	err = d.connect(pool)
+	if err != nil {
+		log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	defer d.shutdown()
+
+	// FIXME: this rbdImageIsLocked func is failing - see error below
+	// NOTE: for now we just attempt to grab a lock
 	//
 	// check that the image is not locked already
 	//locked, err := d.rbdImageIsLocked(name)
@@ -345,6 +368,8 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 //    Respond with the path on the host filesystem where the volume has been
 //    made available, and/or a string error if an error occurred.
 //
+// NOTE: this method does not require the Ceph connection
+//
 func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
 	// parse full image name for optional/default pieces
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
@@ -387,6 +412,14 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	}
 
 	mount := d.mountpoint(pool, name)
+
+	// connect to Ceph so we can manipulate RBD Image
+	err = d.connect(pool)
+	if err != nil {
+		log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	defer d.shutdown()
 
 	// check if it's in our mounts - we may not know about it if plugin was started late?
 	vol, found := d.volumes[mount]
@@ -448,9 +481,6 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 // - http://ceph.com/docs/master/rados/api/librados/
 func (d *cephRBDVolumeDriver) shutdown() {
 	log.Println("INFO: Ceph RBD Driver shutdown() called")
-	d.m.Lock()
-	defer d.m.Unlock()
-
 	if d.ioctx != nil {
 		d.ioctx.Destroy()
 	}
@@ -460,11 +490,8 @@ func (d *cephRBDVolumeDriver) shutdown() {
 }
 
 // connect builds up the ceph conn and default pool
-func (d *cephRBDVolumeDriver) connect(pool string) {
+func (d *cephRBDVolumeDriver) connect(pool string) error {
 	log.Printf("INFO: connect(%s) to Ceph and pool", pool)
-	// FIXME: this needs to be called from an API method, which means mutex is already locked -- yeah?
-	// d.m.Lock()
-	// defer d.m.Unlock()
 
 	// create the go-ceph Client Connection
 	var cephConn *rados.Conn
@@ -477,7 +504,8 @@ func (d *cephRBDVolumeDriver) connect(pool string) {
 		cephConn, err = rados.NewConnWithClusterAndUser(d.cluster, d.user)
 	}
 	if err != nil {
-		log.Panicf("ERROR: Unable to create ceph connection to cluster=%s with user=%s: %s", d.cluster, d.user, err)
+		log.Printf("ERROR: Unable to create ceph connection to cluster=%s with user=%s: %s", d.cluster, d.user, err)
+		return err
 	}
 
 	// read ceph.conf and setup connection
@@ -487,46 +515,30 @@ func (d *cephRBDVolumeDriver) connect(pool string) {
 		err = cephConn.ReadConfigFile(d.config)
 	}
 	if err != nil {
-		log.Panicf("ERROR: Unable to read ceph config: %s", err)
+		log.Printf("ERROR: Unable to read ceph config: %s", err)
+		return err
 	}
 
 	err = cephConn.Connect()
 	if err != nil {
-		log.Panicf("ERROR: Unable to connect to Ceph: %s", err)
+		log.Printf("ERROR: Unable to connect to Ceph: %s", err)
+		return err
 	}
 
 	// can now set conn in driver
 	d.conn = cephConn
 
 	// setup the requested pool context
-	context, err := d.openContext(pool)
-	if err != nil {
-		log.Panicf("ERROR: Unable to connect to default Ceph Pool: %s", err)
-	}
-	d.ioctx = context
-}
-
-// shutdownContext will destroy any non-default ioctx
-func (d *cephRBDVolumeDriver) shutdownContext() {
-	if d.ioctx != nil {
-		d.ioctx.Destroy()
-	}
-}
-
-// openContext provides access to a specific Ceph Pool
-func (d *cephRBDVolumeDriver) openContext(pool string) (*rados.IOContext, error) {
-	d.connect(pool)
-	return d.
-	// check default first
-	// otherwise open new pool context ... call shutdownContext(ctx) to destroy
 	ioctx, err := d.conn.OpenIOContext(pool)
 	if err != nil {
 		// TODO: make sure we aren't hiding a useful error struct by casting to string?
 		msg := fmt.Sprintf("Unable to open context(%s): %s", pool, err)
 		log.Printf("ERROR: " + msg)
-		return ioctx, errors.New(msg)
+		return errors.New(msg)
 	}
-	return ioctx, nil
+	d.ioctx = ioctx
+
+	return nil
 }
 
 // mountpoint returns the expected path on host
@@ -590,13 +602,7 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (pool stri
 func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error) {
 	log.Printf("INFO: checking if rbdImageExists(%s/%s)", pool, findName)
 	if findName != "" {
-		ctx, err := d.openContext(pool)
-		if err != nil {
-			return false, err
-		}
-		defer d.shutdownContext(ctx)
-
-		rbdImageNames, err := rbd.GetImageNames(ctx)
+		rbdImageNames, err := rbd.GetImageNames(d.ioctx)
 		if err != nil {
 			log.Printf("ERROR: Unable to get Ceph RBD Image list: %s", err)
 			return false, err
@@ -691,18 +697,11 @@ func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) 
 		return true, errors.New("rbdImageIsLocked: pool and name required")
 	}
 
-	// connext to pool
-	ctx, err := d.openContext(pool)
-	if err != nil {
-		return true, err
-	}
-	defer d.shutdownContext(ctx)
-
 	// make the image struct
-	rbdImage := rbd.GetImage(ctx, name)
+	rbdImage := rbd.GetImage(d.ioctx, name)
 
 	// open it (read-only)
-	err = rbdImage.Open(true)
+	err := rbdImage.Open(true)
 	if err != nil {
 		log.Printf("ERROR: opening rbd image(%s): %s", name, err)
 		return true, err
@@ -729,17 +728,11 @@ func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) 
 func (d *cephRBDVolumeDriver) lockImage(pool, imagename string) (string, error) {
 	log.Printf("INFO: lockImage(%s/%s)", pool, imagename)
 
-	ctx, err := d.openContext(pool)
-	if err != nil {
-		return "", err
-	}
-	defer d.shutdownContext(ctx)
-
 	// build image struct
-	rbdImage := rbd.GetImage(ctx, imagename)
+	rbdImage := rbd.GetImage(d.ioctx, imagename)
 
 	// open it (read-only)
-	err = rbdImage.Open(true)
+	err := rbdImage.Open(true)
 	if err != nil {
 		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
 		return "", err
@@ -774,17 +767,11 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 	}
 	log.Printf("INFO: unlockImage(%s/%s, %s)", pool, imagename, locker)
 
-	ctx, err := d.openContext(pool)
-	if err != nil {
-		return err
-	}
-	defer d.shutdownContext(ctx)
-
 	// build image struct
-	rbdImage := rbd.GetImage(ctx, imagename)
+	rbdImage := rbd.GetImage(d.ioctx, imagename)
 
 	// open it (read-only)
-	err = rbdImage.Open(true)
+	err := rbdImage.Open(true)
 	if err != nil {
 		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
 		return err
@@ -797,14 +784,8 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 	log.Println("INFO: Remove RBD Image(%s/%s)", pool, name)
 
-	ctx, err := d.openContext(pool)
-	if err != nil {
-		return err
-	}
-	defer d.shutdownContext(ctx)
-
 	// build image struct
-	rbdImage := rbd.GetImage(ctx, name)
+	rbdImage := rbd.GetImage(d.ioctx, name)
 
 	// remove the block device image
 	return rbdImage.Remove()
@@ -814,14 +795,8 @@ func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
 
-	ctx, err := d.openContext(pool)
-	if err != nil {
-		return err
-	}
-	defer d.shutdownContext(ctx)
-
 	// build image struct
-	rbdImage := rbd.GetImage(ctx, name)
+	rbdImage := rbd.GetImage(d.ioctx, name)
 
 	// remove the block device image
 	return rbdImage.Rename(newname)
