@@ -40,7 +40,6 @@ import (
 	"github.com/ceph/go-ceph/rbd"
 )
 
-// TODO: switch to github.com/ceph/go-ceph ?
 // TODO: use versioned dependencies -- e.g. newest dkvolume already has breaking changes?
 
 var (
@@ -48,7 +47,7 @@ var (
 )
 
 // Volume is the Docker concept which we map onto a Ceph RBD Image
-type volume struct {
+type Volume struct {
 	name   string // RBD Image name
 	device string // local host kernel device (e.g. /dev/rbd1)
 	locker string // track the lock name
@@ -65,16 +64,16 @@ type cephRBDVolumeDriver struct {
 	//
 	// TODO: use a chan as semaphore instead of mutex in driver?
 
-	name         string             // unique name for plugin
-	cluster      string             // ceph cluster to use (default: ceph)
-	user         string             // ceph user to use (default: admin)
-	defaultPool  string             // default ceph pool to use (default: rbd)
-	root         string             // scratch dir for mounts for this plugin
-	config       string             // ceph config file to read
-	volumes      map[string]*volume // track locally mounted volumes
-	m            *sync.Mutex        // mutex to guard operations that change volume maps or use conn
-	conn         *rados.Conn        // keep an open connection
-	defaultIoctx *rados.IOContext   // context for default pool
+	name        string             // unique name for plugin
+	cluster     string             // ceph cluster to use (default: ceph)
+	user        string             // ceph user to use (default: admin)
+	defaultPool string             // default ceph pool to use (default: rbd)
+	root        string             // scratch dir for mounts for this plugin
+	config      string             // ceph config file to read
+	volumes     map[string]*Volume // track locally mounted volumes
+	m           *sync.Mutex        // mutex to guard operations that change volume maps or use conn
+	conn        *rados.Conn        // create a connection for API operations
+	ioctx       *rados.IOContext   // context for requested pool
 }
 
 // newCephRBDVolumeDriver builds the driver struct, reads config file and connects to cluster
@@ -91,12 +90,9 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 		defaultPool: defaultPoolName,
 		root:        mountDir,
 		config:      config,
-		volumes:     map[string]*volume{},
+		volumes:     map[string]*Volume{},
 		m:           &sync.Mutex{},
 	}
-	//conn:        cephConn,
-
-	driver.connect()
 
 	return driver
 }
@@ -168,10 +164,6 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 	return dkvolume.Response{}
 }
 
-// TODO: figure out when this is called in docker/mesos/marathon cycle
-// ... does this only get called explicitly via docker rm -v ...? and so if
-// you call that you actually expect to destroy the volume?
-//
 // POST /VolumeDriver.Remove
 //
 // Request:
@@ -329,7 +321,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	}
 
 	// if all that was successful - add to our list of volumes
-	d.volumes[mount] = &volume{
+	d.volumes[mount] = &Volume{
 		name:   name,
 		device: device,
 		locker: locker,
@@ -403,7 +395,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 		// set up a fake Volume with defaults ...
 		// - device is /dev/rbd/<pool>/<image> in newer ceph versions
 		// - assume we are the locker (will fail if locked from another host)
-		vol = &volume{
+		vol = &Volume{
 			pool:   pool,
 			name:   name,
 			device: fmt.Sprintf("/dev/rbd/%s/%s", pool, name),
@@ -459,34 +451,28 @@ func (d *cephRBDVolumeDriver) shutdown() {
 	d.m.Lock()
 	defer d.m.Unlock()
 
-	if d.defaultIoctx != nil {
-		d.defaultIoctx.Destroy()
+	if d.ioctx != nil {
+		d.ioctx.Destroy()
 	}
 	if d.conn != nil {
 		d.conn.Shutdown()
 	}
 }
 
-// reload will try to (re)connect to ceph
-func (d *cephRBDVolumeDriver) reload() {
-	log.Println("INFO: Ceph RBD Driver reload() called")
-	d.shutdown()
-	d.connect()
-}
-
 // connect builds up the ceph conn and default pool
-func (d *cephRBDVolumeDriver) connect() {
-	log.Println("INFO: connect() to Ceph")
-	d.m.Lock()
-	defer d.m.Unlock()
+func (d *cephRBDVolumeDriver) connect(pool string) {
+	log.Printf("INFO: connect(%s) to Ceph and pool", pool)
+	// FIXME: this needs to be called from an API method, which means mutex is already locked -- yeah?
+	// d.m.Lock()
+	// defer d.m.Unlock()
 
-	// create reusable go-ceph Client Connection
+	// create the go-ceph Client Connection
 	var cephConn *rados.Conn
 	var err error
 	if d.cluster == "" {
 		cephConn, err = rados.NewConnWithUser(d.user)
 	} else {
-		// FIXME: TODO: can't seem to use a cluster name -- get error -22 from go-ceph/rados:
+		// FIXME: TODO: can't seem to use a cluster name -- get error -22 from noahdesu/go-ceph/rados:
 		// panic: Unable to create ceph connection to cluster=ceph with user=admin: rados: ret=-22
 		cephConn, err = rados.NewConnWithClusterAndUser(d.cluster, d.user)
 	}
@@ -512,27 +498,26 @@ func (d *cephRBDVolumeDriver) connect() {
 	// can now set conn in driver
 	d.conn = cephConn
 
-	// setup the default context (pool most likely to be used)
-	defaultContext, err := d.openContext(d.defaultPool)
+	// setup the requested pool context
+	context, err := d.openContext(pool)
 	if err != nil {
 		log.Panicf("ERROR: Unable to connect to default Ceph Pool: %s", err)
 	}
-	d.defaultIoctx = defaultContext
+	d.ioctx = context
 }
 
 // shutdownContext will destroy any non-default ioctx
-func (d *cephRBDVolumeDriver) shutdownContext(ioctx *rados.IOContext) {
-	if ioctx != nil && ioctx != d.defaultIoctx {
-		ioctx.Destroy()
+func (d *cephRBDVolumeDriver) shutdownContext() {
+	if d.ioctx != nil {
+		d.ioctx.Destroy()
 	}
 }
 
 // openContext provides access to a specific Ceph Pool
 func (d *cephRBDVolumeDriver) openContext(pool string) (*rados.IOContext, error) {
+	d.connect(pool)
+	return d.
 	// check default first
-	if pool == d.defaultPool && d.defaultIoctx != nil {
-		return d.defaultIoctx, nil
-	}
 	// otherwise open new pool context ... call shutdownContext(ctx) to destroy
 	ioctx, err := d.conn.OpenIOContext(pool)
 	if err != nil {
@@ -555,7 +540,7 @@ func (d *cephRBDVolumeDriver) mountpoint(pool, name string) string {
 //
 // Returns: pool, image-name, size, error
 //
-func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, string, int, error) {
+func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (pool string, imagename string, size int, err error) {
 	// Examples of regexp matches:
 	//   foo: ["foo" "" "" "foo" "" ""]
 	//   foo@1024: ["foo@1024" "" "" "foo" "@1024" "1024"]
@@ -579,16 +564,16 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, s
 	}
 
 	// 2: pool
-	pool := d.defaultPool // defaul pool for plugin
+	pool = d.defaultPool // defaul pool for plugin
 	if matches[2] != "" {
 		pool = matches[2]
 	}
 
 	// 3: image
-	imagename := matches[3]
+	imagename = matches[3]
 
 	// 5: size
-	size := *defaultImageSizeMB
+	size = *defaultImageSizeMB
 	if matches[5] != "" {
 		var err error
 		size, err = strconv.Atoi(matches[5])

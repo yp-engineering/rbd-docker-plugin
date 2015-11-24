@@ -6,6 +6,8 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Changed
 - Update go-ceph import to use github.com/ceph/go-ceph instead of
   noahdesu/go-ceph
+- Recreate ceph connection and pool context for every operation (don't 
+  try to cache them)
 
 ## [0.2.2] - 2015-11-19
 ### Changed
