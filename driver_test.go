@@ -38,11 +38,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestDriverReload(t *testing.T) {
-	t.Skip("This causes an error at driver.go:755 rbdImage.Open()")
-	testDriver.reload()
-}
-
 func TestLocalLockerCookie(t *testing.T) {
 	assert.NotEqual(t, "HOST_UNKNOWN", testDriver.localLockerCookie())
 }

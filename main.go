@@ -68,7 +68,8 @@ func main() {
 		*rootMountDir,
 		*cephConfigFile,
 	)
-	// build driver struct
+
+	// build driver struct -- but don't create connection yet
 	d := newCephRBDVolumeDriver(
 		*pluginName,
 		*cephCluster,
@@ -92,9 +93,8 @@ func main() {
 
 	// setup signal handling after logging setup and creating driver, in order to signal the logfile and ceph connection
 	// NOTE: systemd will send SIGTERM followed by SIGKILL after a timeout to stop a service daemon
-	// NOTE: we chose to use SIGHUP to reload logfile and ceph connection
 	signalChannel := make(chan os.Signal, 2) // chan with buffer size 2
-	signal.Notify(signalChannel, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGHUP)
+	signal.Notify(signalChannel, syscall.SIGTERM, syscall.SIGKILL)
 	go func() {
 		for sig := range signalChannel {
 			//sig := <-signalChannel
@@ -105,14 +105,6 @@ func main() {
 				d.shutdown()
 				shutdownLogging(logFile)
 				os.Exit(0)
-			case syscall.SIGHUP:
-				// reload logs and conn
-				log.Printf("INFO: received HUP signal: %s", sig)
-				logFile, err = reloadLogging(logFile)
-				if err != nil {
-					log.Printf("Unable to reload log: %s", err)
-				}
-				d.reload()
 			}
 		}
 	}()
