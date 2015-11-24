@@ -18,7 +18,7 @@ package main
 //
 // golang github code examples:
 // - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
-// - https://github.com/noahdesu/go-ceph
+// - https://github.com/ceph/go-ceph
 // - https://github.com/calavera/dkvolume
 // - https://github.com/calavera/docker-volume-glusterfs
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
@@ -36,8 +36,8 @@ import (
 	"sync"
 
 	"github.com/calavera/dkvolume"
-	"github.com/noahdesu/go-ceph/rados"
-	"github.com/noahdesu/go-ceph/rbd"
+	"github.com/ceph/go-ceph/rados"
+	"github.com/ceph/go-ceph/rbd"
 )
 
 // TODO: switch to github.com/ceph/go-ceph ?
@@ -452,7 +452,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 
 // shutdown closes the connection - maybe not needed unless we recreate conn?
 // more info:
-// - https://github.com/noahdesu/go-ceph/blob/master/rados/ioctx.go#L127
+// - https://github.com/ceph/go-ceph/blob/master/rados/ioctx.go#L127
 // - http://ceph.com/docs/master/rados/api/librados/
 func (d *cephRBDVolumeDriver) shutdown() {
 	log.Println("INFO: Ceph RBD Driver shutdown() called")

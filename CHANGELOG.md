@@ -4,6 +4,8 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Changed
+- Update go-ceph import to use github.com/ceph/go-ceph instead of
+  noahdesu/go-ceph
 
 ## [0.2.2] - 2015-11-19
 ### Changed
