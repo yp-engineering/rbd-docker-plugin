@@ -29,6 +29,7 @@ DIR=$1
 # get rid of process and directories leftovers
 pkill ceph-mon || true
 pkill ceph-osd || true
+pkill ceph-mds || true
 rm -fr $DIR
 
 # cluster wide parameters

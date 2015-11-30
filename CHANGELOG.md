@@ -4,6 +4,18 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Changed
+- Last ditch effort TODO: Update all go-ceph functions to use CLI shell commands instead
+
+## [0.3.1] - 2015-11-30
+### Changed
+- Try to open RBD Image without read-only option (no effect)
+- Try to use same client-id for every connection -- not possible in
+  go-ceph
+- Adding --conf options to external rbd operations (having micro-osd
+  issues)
+
+## [0.3.0] - 2015-11-25
+### Changed
 - Update go-ceph import to use github.com/ceph/go-ceph instead of
   noahdesu/go-ceph
 - Recreate ceph connection and pool context for every operation (don't 

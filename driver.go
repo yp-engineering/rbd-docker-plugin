@@ -637,6 +637,7 @@ func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int,
 	//	"--image-features", strconv.Itoa(4),
 	_, err = sh(
 		"rbd", "create",
+		"--conf", d.config,
 		"--id", d.user,
 		"--pool", pool,
 		"--image-format", strconv.Itoa(2),
@@ -732,7 +733,8 @@ func (d *cephRBDVolumeDriver) lockImage(pool, imagename string) (string, error) 
 	rbdImage := rbd.GetImage(d.ioctx, imagename)
 
 	// open it (read-only)
-	err := rbdImage.Open(true)
+	//err := rbdImage.Open(true)
+	err := rbdImage.Open()
 	if err != nil {
 		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
 		return "", err
@@ -771,7 +773,8 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 	rbdImage := rbd.GetImage(d.ioctx, imagename)
 
 	// open it (read-only)
-	err := rbdImage.Open(true)
+	//err := rbdImage.Open(true)
+	err := rbdImage.Open()
 	if err != nil {
 		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
 		return err
@@ -798,7 +801,7 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 	// build image struct
 	rbdImage := rbd.GetImage(d.ioctx, name)
 
-	// remove the block device image
+	// rename the block device image
 	return rbdImage.Rename(newname)
 }
 
@@ -810,13 +813,13 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
-	return sh("rbd", "map", "--id", d.user, "--pool", pool, imagename)
+	return sh("rbd", "--conf", d.config, "map", "--id", d.user, "--pool", pool, imagename)
 }
 
 // unmapImageDevice will release the mapped kernel device
 // TODO: does this operation even require a user --id ? I can unmap a device without or with a different id and rbd doesn't seem to care
 func (d *cephRBDVolumeDriver) unmapImageDevice(device string) error {
-	_, err := sh("rbd", "unmap", device)
+	_, err := sh("rbd", "--conf", d.config, "unmap", device)
 	return err
 }
 
@@ -827,6 +830,7 @@ func (d *cephRBDVolumeDriver) sh_removeRBDImage(pool, name string) error {
 	// remove the block device image
 	_, err := sh(
 		"rbd", "rm",
+		"--conf", d.config,
 		"--id", d.user,
 		"--pool", pool,
 		name,
@@ -843,6 +847,7 @@ func (d *cephRBDVolumeDriver) sh_renameRBDImage(pool, name, newname string) erro
 
 	_, err := sh(
 		"rbd", "rename",
+		"--conf", d.config,
 		"--id", d.user,
 		"--pool", pool,
 		name,

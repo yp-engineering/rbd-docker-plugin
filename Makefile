@@ -15,7 +15,7 @@ INSTALL?=install
 
 BINARY=rbd-docker-plugin
 PKG_SRC=main.go driver.go version.go
-PKG_SRC_TEST=$(PKG_SRC) driver_test.go
+PKG_SRC_TEST=$(PKG_SRC) driver_test.go unlock_test.go
 
 PACKAGE_BUILD=$(TMPDIR)/$(BINARY).tpkg.buildtmp
 
@@ -53,6 +53,7 @@ clean:
 uninstall:
 	@$(RM) -iv `which $(BINARY)`
 
+# FIXME: TODO: this micro-osd script leaves ceph-mds laying around -- fix it up
 test:
 	TMP_DIR=$$(mktemp -d) && \
 		./micro-osd.sh $$TMP_DIR && \

@@ -21,6 +21,7 @@ import (
 var (
 	// Plugin Option Flags
 	versionFlag        = flag.Bool("version", false, "Print version")
+	debugFlag          = flag.Bool("debug", false, "Debug output")
 	pluginName         = flag.String("name", "rbd", "Docker plugin name for use on --volume-driver option")
 	cephUser           = flag.String("user", "admin", "Ceph user")
 	cephConfigFile     = flag.String("config", "", "Ceph cluster config") // more likely to have config file pointing to cluster
@@ -119,7 +120,7 @@ func main() {
 
 // isDebugEnabled checks for RBD_DOCKER_PLUGIN_DEBUG environment variable
 func isDebugEnabled() bool {
-	return os.Getenv("RBD_DOCKER_PLUGIN_DEBUG") == "1"
+	return *debugFlag || os.Getenv("RBD_DOCKER_PLUGIN_DEBUG") == "1"
 }
 
 // setupLogging attempts to log to a file, otherwise stderr
