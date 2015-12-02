@@ -62,6 +62,13 @@ test:
 		go test -v && \
 		rm -rf $$TMP_DIR
 
+
+# use existing ceph installation instead of micro-osd.sh - expecting CEPH_CONF to be set ...
+local_test:
+	test -n "${CEPH_CONF}" && \
+		ceph -s && \
+		go test -v
+
 dist:
 	mkdir dist
 

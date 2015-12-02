@@ -109,7 +109,7 @@ func TestSh_fail(t *testing.T) {
 
 // Helpers
 func formatError(name string, err error) string {
-	return fmt.Sprintf("ERROR calling %s: %s", name, err)
+	return fmt.Sprintf("ERROR calling %s: %q", name, err)
 }
 
 func parseImageAndHandleError(t *testing.T, name string) (string, string, int) {
