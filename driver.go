@@ -55,6 +55,20 @@ type Volume struct {
 	pool   string
 }
 
+// interface to abstract the ceph operations - either go-ceph lib or sh cli commands
+type RbdImageDriver interface {
+	// shutdown()
+	// connect(pool string) error // ?? only go-ceph
+
+	rbdImageExists(pool, findName string) (bool, error)
+	createRBDImage(pool string, name string, size int, fstype string) error
+	rbdImageIsLocked(pool, name string) (bool, error)
+	lockImage(pool, imagename string) (string, error)
+	unlockImage(pool, imagename, locker string) error
+	removeRBDImage(pool, name string) error
+	renameRBDImage(pool, name, newname string) error
+}
+
 type cephRBDVolumeDriver struct {
 	// - using default ceph cluster name ("ceph")
 	// - using default ceph config (/etc/ceph/<cluster>.conf)
@@ -64,16 +78,16 @@ type cephRBDVolumeDriver struct {
 	//
 	// TODO: use a chan as semaphore instead of mutex in driver?
 
-	name        string             // unique name for plugin
-	cluster     string             // ceph cluster to use (default: ceph)
-	user        string             // ceph user to use (default: admin)
-	defaultPool string             // default ceph pool to use (default: rbd)
-	root        string             // scratch dir for mounts for this plugin
-	config      string             // ceph config file to read
-	volumes     map[string]*Volume // track locally mounted volumes
-	m           *sync.Mutex        // mutex to guard operations that change volume maps or use conn
-	conn        *rados.Conn        // create a connection for each API operation
-	ioctx       *rados.IOContext   // context for requested pool
+	name    string             // unique name for plugin
+	cluster string             // ceph cluster to use (default: ceph)
+	user    string             // ceph user to use (default: admin)
+	pool    string             // ceph pool to use (default: rbd)
+	root    string             // scratch dir for mounts for this plugin
+	config  string             // ceph config file to read
+	volumes map[string]*Volume // track locally mounted volumes
+	m       *sync.Mutex        // mutex to guard operations that change volume maps or use conn
+	conn    *rados.Conn        // create a connection for each API operation
+	ioctx   *rados.IOContext   // context for requested pool
 }
 
 // newCephRBDVolumeDriver builds the driver struct, reads config file and connects to cluster
@@ -84,14 +98,14 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 
 	// fill everything except the connection and context
 	driver := cephRBDVolumeDriver{
-		name:        pluginName,
-		cluster:     cluster,
-		user:        userName,
-		defaultPool: defaultPoolName,
-		root:        mountDir,
-		config:      config,
-		volumes:     map[string]*Volume{},
-		m:           &sync.Mutex{},
+		name:    pluginName,
+		cluster: cluster,
+		user:    userName,
+		pool:    defaultPoolName,
+		root:    mountDir,
+		config:  config,
+		volumes: map[string]*Volume{},
+		m:       &sync.Mutex{},
 	}
 
 	return driver
@@ -576,7 +590,7 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (pool stri
 	}
 
 	// 2: pool
-	pool = d.defaultPool // defaul pool for plugin
+	pool = d.pool // defaul pool for plugin
 	if matches[2] != "" {
 		pool = matches[2]
 	}
@@ -600,6 +614,19 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (pool stri
 
 // rbdImageExists will check for an existing Ceph RBD Image
 func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error) {
+	return d.goceph_rbdImageExists(pool, findName)
+}
+
+// sh_rbdImageExists uses rbd info to check for ceph rbd image
+func (d *cephRBDVolumeDriver) sh_rbdImageExists(pool, findName string) (bool, error) {
+	_, err := d.rbdsh(pool, "info", findName)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (d *cephRBDVolumeDriver) goceph_rbdImageExists(pool, findName string) (bool, error) {
 	log.Printf("INFO: checking if rbdImageExists(%s/%s)", pool, findName)
 	if findName != "" {
 		rbdImageNames, err := rbd.GetImageNames(d.ioctx)
@@ -618,6 +645,10 @@ func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error
 
 // createRBDImage will create a new Ceph block device and make a filesystem on it
 func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int, fstype string) error {
+	return d.sh_createRBDImage(pool, name, size, fstype)
+}
+
+func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size int, fstype string) error {
 	log.Printf("INFO: Attempting to create new RBD Image: (%s/%s, %s, %s)", pool, name, size, fstype)
 
 	// check that fs is valid type (needs mkfs.fstype in PATH)
@@ -627,19 +658,27 @@ func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int,
 		return errors.New(msg)
 	}
 
-	// TODO: use the go-ceph Create(..) func for this
+	// TODO: use the go-ceph Create(..) func for this?
 
-	// create the block device image with format=2
+	// create the block device image with format=2 (v2)
 	//  should we enable all v2 image features?: +1: layering support +2: striping v2 support +4: exclusive locking support +8: object map support
 	// NOTE: i tried but "2015-08-02 20:24:36.726758 7f87787907e0 -1 librbd: librbd does not support requested features."
 	// NOTE: I also tried just image-features=4 (locking) - but map will fail:
 	//       sudo rbd unmap mynewvol =>  rbd: 'mynewvol' is not a block device, rbd: unmap failed: (22) Invalid argument
 	//	"--image-features", strconv.Itoa(4),
-	_, err = sh(
-		"rbd", "create",
-		"--conf", d.config,
-		"--id", d.user,
-		"--pool", pool,
+	/*
+		_, err = sh(
+			"rbd", "create",
+			"--conf", d.config,
+			"--id", d.user,
+			"--pool", pool,
+			"--image-format", strconv.Itoa(2),
+			"--size", strconv.Itoa(size),
+			name,
+		)
+	*/
+	_, err = d.rbdsh(
+		pool, "create",
 		"--image-format", strconv.Itoa(2),
 		"--size", strconv.Itoa(size),
 		name,
@@ -688,12 +727,26 @@ func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int,
 	return nil
 }
 
+// rbdImageIsLocked returns true if named image is already locked
+func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) {
+	return d.goceph_rbdImageIsLocked(pool, name)
+}
+
+func (d *cephRBDVolumeDriver) sh_rbdImageIsLocked(pool, name string) (bool, error) {
+	// check the output for a lock -- if blank or error, assume not locked (?)
+	out, err := d.rbdsh(pool, "lock", "ls", name)
+	if err != nil || out != "" {
+		return false, err
+	}
+	// otherwise - no error and output is not blank - assume a lock exists ...
+	return true, nil
+}
+
 // FIXME: getting panics when trying to run below go-ceph code, at ListLockers():
 //
 // see https://github.com/yp-engineering/rbd-docker-plugin/issues/3
 //
-// rbdImageIsLocked returns true if named image is already locked
-func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) {
+func (d *cephRBDVolumeDriver) goceph_rbdImageIsLocked(pool, name string) (bool, error) {
 	if pool == "" || name == "" {
 		return true, errors.New("rbdImageIsLocked: pool and name required")
 	}
@@ -727,6 +780,19 @@ func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) 
 
 // lockImage locks image and returns locker cookie name
 func (d *cephRBDVolumeDriver) lockImage(pool, imagename string) (string, error) {
+	return d.goceph_lockImage(pool, imagename)
+}
+
+func (d *cephRBDVolumeDriver) sh_lockImage(pool, imagename string) (string, error) {
+	cookie := d.localLockerCookie()
+	_, err := d.rbdsh(pool, "lock", "add", imagename, cookie)
+	if err != nil {
+		return "", err
+	}
+	return cookie, nil
+}
+
+func (d *cephRBDVolumeDriver) goceph_lockImage(pool, imagename string) (string, error) {
 	log.Printf("INFO: lockImage(%s/%s)", pool, imagename)
 
 	// build image struct
@@ -762,6 +828,28 @@ func (d *cephRBDVolumeDriver) localLockerCookie() string {
 
 // unlockImage releases the exclusive lock on an image
 func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error {
+	return d.goceph_unlockImage(pool, imagename, locker)
+}
+
+func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) error {
+	// first - we need to figure out the client id of the locker -- so we have to rbd lock list and grep out space-delimited fields
+	out, err := d.rbdsh(pool, "lock", "list", imagename)
+	if err != nil || out == "" {
+		log.Printf("ERROR: image not locked or ceph rbd error: %s", err)
+		return err
+	}
+
+	// parse out client id -- assume we looking for a line with the locker cookie on it --
+
+	clientid := "client."
+	_, err = d.rbdsh(pool, "lock", "rm", imagename, locker, clientid)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *cephRBDVolumeDriver) goceph_unlockImage(pool, imagename, locker string) error {
 	if locker == "" {
 		log.Printf("WARN: Attempting to unlock image(%s/%s) for empty locker using default hostname", pool, imagename)
 		// try to unlock using the local hostname
@@ -787,6 +875,21 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 	log.Println("INFO: Remove RBD Image(%s/%s)", pool, name)
 
+	return d.goceph_removeRBDImage(pool, name)
+}
+
+// sh_removeRBDImage will remove a Ceph RBD image - no undo available
+func (d *cephRBDVolumeDriver) sh_removeRBDImage(pool, name string) error {
+	// remove the block device image
+	_, err := d.rbdsh(pool, "rm", name)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *cephRBDVolumeDriver) goceph_removeRBDImage(pool, name string) error {
 	// build image struct
 	rbdImage := rbd.GetImage(d.ioctx, name)
 
@@ -798,6 +901,22 @@ func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
 
+	return d.goceph_renameRBDImage(pool, name, newname)
+}
+
+// sh_renameRBDImage will move a Ceph RBD image to new name
+func (d *cephRBDVolumeDriver) sh_renameRBDImage(pool, name, newname string) error {
+	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
+
+	out, err := d.rbdsh(pool, "rename", name, newname)
+	if err != nil {
+		log.Printf("ERROR: unable to rename: %s: %s", err, out)
+		return err
+	}
+	return nil
+}
+
+func (d *cephRBDVolumeDriver) goceph_renameRBDImage(pool, name, newname string) error {
 	// build image struct
 	rbdImage := rbd.GetImage(d.ioctx, name)
 
@@ -806,65 +925,30 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 }
 
 //
-// NOTE: the following are Shell commands for low level RBD or Device operations
+// NOTE: the following are Shell commands for low level kernel RBD or Device
+// operations - there are no go-ceph lib alternatives
 //
 
 // RBD subcommands
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
-	return sh("rbd", "--conf", d.config, "map", "--id", d.user, "--pool", pool, imagename)
+	return d.rbdsh(pool, "map", imagename)
 }
 
 // unmapImageDevice will release the mapped kernel device
-// TODO: does this operation even require a user --id ? I can unmap a device without or with a different id and rbd doesn't seem to care
 func (d *cephRBDVolumeDriver) unmapImageDevice(device string) error {
-	_, err := sh("rbd", "--conf", d.config, "unmap", device)
+	// NOTE: this does not even require a user nor a pool, just device name
+	_, err := d.rbdsh("", "unmap", device)
 	return err
 }
 
-// DEPRECATED sh_removeRBDImage will remove a Ceph RBD image - no undo available
-func (d *cephRBDVolumeDriver) sh_removeRBDImage(pool, name string) error {
-	log.Println("INFO: Remove RBD Image(%s/%s)", pool, name)
-
-	// remove the block device image
-	_, err := sh(
-		"rbd", "rm",
-		"--conf", d.config,
-		"--id", d.user,
-		"--pool", pool,
-		name,
-	)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// DEPRECATED sh_renameRBDImage will move a Ceph RBD image to new name
-func (d *cephRBDVolumeDriver) sh_renameRBDImage(pool, name, newname string) error {
-	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
-
-	_, err := sh(
-		"rbd", "rename",
-		"--conf", d.config,
-		"--id", d.user,
-		"--pool", pool,
-		name,
-		newname,
-	)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// Callouts to other shell commands: blkid, mount, umount
+// Callouts to other unix shell commands: blkid, mount, umount
 
 // deviceType identifies Image FS Type - requires RBD image to be mapped to kernel device
 func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 	// blkid Output:
-	//	/dev/rbd3: xfs
+	//	xfs
 	blkid, err := sh("blkid", "-o", "value", "-s", "TYPE", device)
 	if err != nil {
 		return "", err
@@ -889,6 +973,15 @@ func (d *cephRBDVolumeDriver) unmountDevice(device string) error {
 }
 
 // UTIL
+
+// rbdsh will call rbd with the given command arguments, also adding config, user and pool flags
+func (d *cephRBDVolumeDriver) rbdsh(pool, command string, args ...string) (string, error) {
+	args = append([]string{"--conf", d.config, "--id", d.user, command}, args...)
+	if pool != "" {
+		args = append([]string{"--pool", pool}, args...)
+	}
+	return sh("rbd", args...)
+}
 
 // sh is a simple os.exec Command tool, returns trimmed string output
 func sh(name string, args ...string) (string, error) {

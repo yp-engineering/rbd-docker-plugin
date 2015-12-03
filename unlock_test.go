@@ -21,10 +21,6 @@ import (
 //"github.com/ceph/go-ceph/rbd"
 //"github.com/ceph/go-ceph/rados"
 
-// TODO: tests that need ceph
-// make fake cluster?
-// use dockerized container with ceph for tests?
-
 var (
 	//testDriver cephRBDVolumeDriver
 	testPool  = "rbd"

@@ -11,7 +11,7 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 - Try to open RBD Image without read-only option (no effect)
 - Try to use same client-id for every connection -- not possible in
   go-ceph
-- Adding --conf options to external rbd operations (having micro-osd
+- Adding --conf options to external rbd operations (was having micro-osd
   issues)
 
 ## [0.3.0] - 2015-11-25
