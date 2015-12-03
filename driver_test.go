@@ -43,7 +43,7 @@ func TestLocalLockerCookie(t *testing.T) {
 }
 
 func TestRbdImageExists_noName(t *testing.T) {
-	f_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "")
+	f_bool, err := testDriver.rbdImageExists(testDriver.pool, "")
 	assert.Equal(t, false, f_bool, fmt.Sprintf("%s", err))
 }
 
@@ -51,7 +51,7 @@ func TestRbdImageExists_withName(t *testing.T) {
 	t.Skip("This fails for many reasons. Need to figure out how to do this in a container.")
 	err := testDriver.createRBDImage("rbd", "foo", 1, "xfs")
 	assert.Nil(t, err, formatError("createRBDImage", err))
-	t_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, "foo")
+	t_bool, err := testDriver.rbdImageExists(testDriver.pool, "foo")
 	assert.Equal(t, true, t_bool, formatError("rbdImageExists", err))
 }
 
@@ -59,7 +59,7 @@ func TestRbdImageExists_withName(t *testing.T) {
 func TestParseImagePoolNameSize_name(t *testing.T) {
 	pool, name, size := parseImageAndHandleError(t, "foo")
 
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
+	assert.Equal(t, testDriver.pool, pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
 	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
 }
@@ -67,7 +67,7 @@ func TestParseImagePoolNameSize_name(t *testing.T) {
 func TestParseImagePoolNameSize_complexName(t *testing.T) {
 	pool, name, size := parseImageAndHandleError(t, "es-data1_v2.3")
 
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
+	assert.Equal(t, testDriver.pool, pool, "Pool should be same")
 	assert.Equal(t, "es-data1_v2.3", name, "Name should be same")
 	assert.Equal(t, *defaultImageSizeMB, size, "Size should be same")
 }
@@ -91,7 +91,7 @@ func TestParseImagePoolNameSize_withSize(t *testing.T) {
 func TestParseImagePoolNameSize_withPoolAndSize(t *testing.T) {
 	pool, name, size := parseImageAndHandleError(t, "foo@1024")
 
-	assert.Equal(t, testDriver.defaultPool, pool, "Pool should be same")
+	assert.Equal(t, testDriver.pool, pool, "Pool should be same")
 	assert.Equal(t, "foo", name, "Name should be same")
 	assert.Equal(t, 1024, size, "Size should be same")
 }

@@ -24,6 +24,8 @@ package main
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -832,7 +834,8 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 }
 
 func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) error {
-	// first - we need to figure out the client id of the locker -- so we have to rbd lock list and grep out space-delimited fields
+	// first - we need to discover the client id of the locker -- so we have to
+	// `rbd lock list` and grep out fields
 	out, err := d.rbdsh(pool, "lock", "list", imagename)
 	if err != nil || out == "" {
 		log.Printf("ERROR: image not locked or ceph rbd error: %s", err)
@@ -840,8 +843,21 @@ func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) err
 	}
 
 	// parse out client id -- assume we looking for a line with the locker cookie on it --
+	var clientid string
+	lines := grepLines(out, locker)
+	log.Printf("DEBUG: found lines matching %s:\n%s\n", locker, lines)
+	if len(lines) == 1 {
+		// grab first word of first line as the client.id ?
+		tokens := strings.SplitN(lines[0], " ", 2)
+		if tokens[0] != "" {
+			clientid = tokens[0]
+		}
+	}
 
-	clientid := "client."
+	if clientid == "" {
+		log.Printf("WARN: unable to determine client.id")
+	}
+
 	_, err = d.rbdsh(pool, "lock", "rm", imagename, locker, clientid)
 	if err != nil {
 		return err
@@ -992,4 +1008,22 @@ func sh(name string, args ...string) (string, error) {
 	// TODO: capture and output STDERR to logfile?
 	out, err := cmd.Output()
 	return strings.Trim(string(out), " \n"), err
+}
+
+// grepLines pulls out lines that match a string (no regex ... yet)
+func grepLines(data string, like string) []string {
+	var result = []string{}
+	like_bytes := []byte(like)
+
+	scanner := bufio.NewScanner(strings.NewReader(data))
+	for scanner.Scan() {
+		if bytes.Contains(scanner.Bytes(), like_bytes) {
+			result = append(result, scanner.Text())
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("WARN: error scanning string for %s: %s", like, err)
+	}
+
+	return result
 }

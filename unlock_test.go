@@ -38,7 +38,7 @@ func TestGoCephConnection(t *testing.T) {
 	defer testDriver.shutdown()
 
 	// check if we need to make the image
-	imageAlreadyExists, err := testDriver.rbdImageExists(testDriver.defaultPool, testImage)
+	imageAlreadyExists, err := testDriver.rbdImageExists(testPool, testImage)
 	assert.Nil(t, err, fmt.Sprintf("Unable to check if image already exists: %s", err))
 
 	if imageAlreadyExists {
@@ -108,7 +108,7 @@ func TestGoCephConnection(t *testing.T) {
 	assert.Nil(t, err, fmt.Sprintf("Error reconnecting: %s", err))
 
 	// check that it exists again (e.g. in order to unlock it)
-	t3_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, testImage)
+	t3_bool, err := testDriver.rbdImageExists(testPool, testImage)
 	assert.Equal(t, true, t3_bool, fmt.Sprintf("Unable to find image after create: %s", err))
 
 	// unlock image
@@ -116,8 +116,21 @@ func TestGoCephConnection(t *testing.T) {
 	assert.Nil(t, err, fmt.Sprintf("Unable to unlock image: %s", err))
 
 	// check that it exists again (e.g. because sanity)
-	t4_bool, err := testDriver.rbdImageExists(testDriver.defaultPool, testImage)
+	t4_bool, err := testDriver.rbdImageExists(testPool, testImage)
 	assert.Equal(t, true, t4_bool, fmt.Sprintf("Unable to find image after create: %s", err))
+}
+
+func TestShUnlockImage(t *testing.T) {
+	// lock it first ... ?
+	locker, err := testDriver.sh_lockImage(testPool, testImage)
+	if err != nil {
+		log.Printf("WARN: Unable to lock image in preparation for test: %s", err)
+		locker = testDriver.localLockerCookie()
+	}
+
+	// now unlock it
+	err = testDriver.sh_unlockImage(testPool, testImage, locker)
+	assert.Nil(t, err, fmt.Sprintf("Unable to unlock image using sh rbd: %s", err))
 }
 
 func test_sh(name string, args ...string) (string, error) {
