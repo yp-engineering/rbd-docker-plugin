@@ -32,6 +32,7 @@ func TestMain(m *testing.M) {
 		"rbd",
 		dkvolume.DefaultDockerRootDirectory,
 		cephConf,
+		false,
 	)
 	defer testDriver.shutdown()
 

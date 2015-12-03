@@ -4,7 +4,9 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Changed
-- Last ditch effort TODO: Update all go-ceph functions to use CLI shell commands instead
+- Last ditch effort : Update all go-ceph functions to use CLI shell commands instead
+- Provide command line flag --go-ceph to use go-ceph lib, otherwise default
+  to sh CLI commands
 
 ## [0.3.1] - 2015-11-30
 ### Changed

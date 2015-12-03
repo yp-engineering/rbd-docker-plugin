@@ -109,7 +109,7 @@ test_from_container: make/test
 
 # build relocatable tpkg
 # TODO: repair PATHS at install to set TPKG_HOME (assumed /home/ops)
-package: version build test
+package: version build local_test
 	$(RM) -fr $(PACKAGE_BUILD)
 	mkdir -p $(PACKAGE_BIN_DIR) $(PACKAGE_INIT_DIR) $(PACKAGE_SYSTEMD_DIR) $(PACKAGE_LOG_CONFIG_DIR)
 	$(INSTALL) $(PACKAGE_SCRIPT_FILES) $(PACKAGE_BUILD)/.

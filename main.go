@@ -5,7 +5,6 @@ package main
 
 // Ceph RBD VolumeDriver Docker Plugin, setup config and go
 
-// TODO: should we use logrus?  already imported in dkvolume and go-ceph *shrug*
 import (
 	"flag"
 	"fmt"
@@ -34,6 +33,7 @@ var (
 	canRemoveVolumes   = flag.Bool("remove", false, "Can Remove (destroy) RBD Images (default: false, volume will be renamed zz_name)")
 	defaultImageSizeMB = flag.Int("size", 20*1024, "RBD Image size to Create (in MB) (default: 20480=20GB)")
 	defaultImageFSType = flag.String("fs", "xfs", "FS type for the created RBD Image (must have mkfs.type)")
+	useGoCeph          = flag.Bool("go-ceph", false, "Use go-ceph library (default: false)")
 )
 
 func init() {
@@ -56,19 +56,29 @@ func main() {
 
 	logFile, err := setupLogging()
 	if err != nil {
-		log.Panicf("Unable to setup logging: %s", err)
+		log.Fatalf("FATAL: Unable to setup logging: %s", err)
 	}
 	defer shutdownLogging(logFile)
 
+	log.Printf("INFO: starting rbd-docker-plugin version %s", VERSION)
 	log.Printf(
-		"INFO: Setting up Ceph Driver for PluginID=%s, cluster=%s, user=%s, pool=%s, mount=%s, config=%s",
+		"INFO: Setting up Ceph Driver for PluginID=%s, cluster=%s, user=%s, pool=%s, mount=%s, config=%s, go-ceph=%s",
 		*pluginName,
 		*cephCluster,
 		*cephUser,
 		*defaultCephPool,
 		*rootMountDir,
 		*cephConfigFile,
+		*useGoCeph,
 	)
+
+	// double check for config file - required especially for non-standard configs
+	if *cephConfigFile == "" {
+		log.Fatal("FATAL: Unable to use ceph rbd tool without config file")
+	}
+	if _, err = os.Stat(*cephConfigFile); os.IsNotExist(err) {
+		log.Fatalf("FATAL: Unable to find ceph config needed for ceph rbd tool: %s", err)
+	}
 
 	// build driver struct -- but don't create connection yet
 	d := newCephRBDVolumeDriver(
@@ -78,8 +88,11 @@ func main() {
 		*defaultCephPool,
 		*rootMountDir,
 		*cephConfigFile,
+		*useGoCeph,
 	)
-	defer d.shutdown()
+	if *useGoCeph {
+		defer d.shutdown()
+	}
 
 	log.Println("INFO: Creating Docker VolumeDriver Handler")
 	h := dkvolume.NewHandler(d)
@@ -89,7 +102,7 @@ func main() {
 	// ensure directory exists
 	err = os.MkdirAll(filepath.Dir(socket), os.ModeDir)
 	if err != nil {
-		log.Panicf("Error creating socket directory: %s", err)
+		log.Fatalf("FATAL: Error creating socket directory: %s", err)
 	}
 
 	// setup signal handling after logging setup and creating driver, in order to signal the logfile and ceph connection
@@ -103,7 +116,9 @@ func main() {
 			case syscall.SIGTERM, syscall.SIGKILL:
 				log.Printf("INFO: received TERM or KILL signal: %s", sig)
 				// close up conn and logs
-				d.shutdown()
+				if *useGoCeph {
+					d.shutdown()
+				}
 				shutdownLogging(logFile)
 				os.Exit(0)
 			}
