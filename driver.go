@@ -830,6 +830,13 @@ func (d *cephRBDVolumeDriver) localLockerCookie() string {
 
 // unlockImage releases the exclusive lock on an image
 func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error {
+	if locker == "" {
+		log.Printf("WARN: Attempting to unlock image(%s/%s) for empty locker using default hostname", pool, imagename)
+		// try to unlock using the local hostname
+		locker = d.localLockerCookie()
+	}
+	log.Printf("INFO: unlockImage(%s/%s, %s)", pool, imagename, locker)
+
 	return d.goceph_unlockImage(pool, imagename, locker)
 }
 
@@ -855,7 +862,7 @@ func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) err
 	}
 
 	if clientid == "" {
-		log.Printf("WARN: unable to determine client.id")
+		return errors.New("sh_unlockImage: Unable to determine client.id")
 	}
 
 	_, err = d.rbdsh(pool, "lock", "rm", imagename, locker, clientid)
@@ -866,13 +873,6 @@ func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) err
 }
 
 func (d *cephRBDVolumeDriver) goceph_unlockImage(pool, imagename, locker string) error {
-	if locker == "" {
-		log.Printf("WARN: Attempting to unlock image(%s/%s) for empty locker using default hostname", pool, imagename)
-		// try to unlock using the local hostname
-		locker = d.localLockerCookie()
-	}
-	log.Printf("INFO: unlockImage(%s/%s, %s)", pool, imagename, locker)
-
 	// build image struct
 	rbdImage := rbd.GetImage(d.ioctx, imagename)
 
@@ -1013,6 +1013,10 @@ func sh(name string, args ...string) (string, error) {
 // grepLines pulls out lines that match a string (no regex ... yet)
 func grepLines(data string, like string) []string {
 	var result = []string{}
+	if like == "" {
+		log.Printf("ERROR: unable to look for empty pattern")
+		return result
+	}
 	like_bytes := []byte(like)
 
 	scanner := bufio.NewScanner(strings.NewReader(data))

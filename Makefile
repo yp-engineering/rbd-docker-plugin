@@ -64,7 +64,9 @@ test:
 
 
 # use existing ceph installation instead of micro-osd.sh - expecting CEPH_CONF to be set ...
+CEPH_CONF ?= /etc/ceph/ceph.conf
 local_test:
+	@echo "Using CEPH_CONF=$(CEPH_CONF)"
 	test -n "${CEPH_CONF}" && \
 		ceph -s && \
 		go test -v
