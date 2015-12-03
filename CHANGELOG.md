@@ -3,10 +3,13 @@ All notable changes to project should be documented in this file.
 We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [0.4.0] - 2015-12-03
 ### Changed
-- Last ditch effort : Update all go-ceph functions to use CLI shell commands instead
+- Last ditch effort : Update all Plugin RBD functions to use CLI shell
+  commands instead of go-ceph library
 - Provide command line flag --go-ceph to use go-ceph lib, otherwise default
-  to sh CLI commands
+  now is shell CLI command via `rbd` binary
 
 ## [0.3.1] - 2015-11-30
 ### Changed
