@@ -256,7 +256,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 		return dkvolume.Response{Err: errString}
 	}
 
-	// attempt to gain lock before remove - lock disappears after rm or rename
+	// attempt to gain lock before remove - lock disappears after rm (but not after rename)
 	locker, err := d.lockImage(pool, name)
 	if err != nil {
 		errString := fmt.Sprintf("Unable to lock image for remove: %s", name)
@@ -279,9 +279,12 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 		if err != nil {
 			errString := fmt.Sprintf("Unable to rename with zz_ prefix: RBD Image(%s): %s", name, err)
 			log.Println("ERROR: " + errString)
+			// unlock by old name
 			defer d.unlockImage(pool, name, locker)
 			return dkvolume.Response{Err: errString}
 		}
+		// unlock by new name
+		defer d.unlockImage(pool, "zz_"+name, locker)
 	}
 
 	delete(d.volumes, mount)
