@@ -3,6 +3,10 @@ All notable changes to project should be documented in this file.
 We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+## [0.4.1] - 2015-12-03
+### Changed
+- Update systemd service unit to add --config /etc/ceph/ceph.conf 
+- Force default config file in main.go to /etc/ceph/ceph.conf
 
 ## [0.4.0] - 2015-12-03
 ### Changed

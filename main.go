@@ -23,8 +23,8 @@ var (
 	debugFlag          = flag.Bool("debug", false, "Debug output")
 	pluginName         = flag.String("name", "rbd", "Docker plugin name for use on --volume-driver option")
 	cephUser           = flag.String("user", "admin", "Ceph user")
-	cephConfigFile     = flag.String("config", "", "Ceph cluster config") // more likely to have config file pointing to cluster
-	cephCluster        = flag.String("cluster", "", "Ceph cluster")       // less likely to run multiple clusters on same hardware
+	cephConfigFile     = flag.String("config", "/etc/ceph/ceph.conf", "Ceph cluster config") // more likely to have config file pointing to cluster
+	cephCluster        = flag.String("cluster", "", "Ceph cluster")                          // less likely to run multiple clusters on same hardware
 	defaultCephPool    = flag.String("pool", "rbd", "Default Ceph Pool for RBD operations")
 	pluginDir          = flag.String("plugins", "/run/docker/plugins", "Docker plugin directory for socket")
 	rootMountDir       = flag.String("mount", dkvolume.DefaultDockerRootDirectory, "Mount directory for volumes on host")
