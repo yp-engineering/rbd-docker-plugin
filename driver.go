@@ -35,7 +35,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/calavera/dkvolume"
+        dkvolume "github.com/docker/go-plugins-helpers/volume"
 	"github.com/noahdesu/go-ceph/rados"
 	"github.com/noahdesu/go-ceph/rbd"
 )
