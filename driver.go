@@ -273,6 +273,17 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 
 	mount := d.mountpoint(pool, name)
 
+	// Does the image exist? If not, call Create
+	exists, err := d.rbdImageExists(pool, name)
+	if err != nil {
+		log.Printf("WARN: checking for RBD Image: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+        if !exists {
+		log.Printf("WARN: Image does not exist: %s", name)
+		d.Create(r)
+        }
+
 	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
 	// check that the image is not locked already
 	//locked, err := d.rbdImageIsLocked(name)
