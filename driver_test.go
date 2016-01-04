@@ -10,7 +10,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/calavera/dkvolume"
+        dkvolume "github.com/docker/go-plugins-helpers/volume"
 	"github.com/stretchr/testify/assert"
 )
 

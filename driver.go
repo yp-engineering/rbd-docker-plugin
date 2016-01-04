@@ -35,7 +35,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/calavera/dkvolume"
+	dkvolume "github.com/docker/go-plugins-helpers/volume"
 	"github.com/noahdesu/go-ceph/rados"
 	"github.com/noahdesu/go-ceph/rbd"
 )
@@ -127,6 +127,12 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 	log.Printf("INFO: Create(%s)", r.Name)
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	return d.createImage(r)
+}
+
+func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
+	log.Printf("INFO: createImage(%s)", r.Name)
 
 	// parse image name optional/default pieces
 	pool, name, size, err := d.parseImagePoolNameSize(r.Name)
@@ -272,6 +278,17 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	}
 
 	mount := d.mountpoint(pool, name)
+
+	// Does the image exist? If not, call Create
+	exists, err := d.rbdImageExists(pool, name)
+	if err != nil {
+		log.Printf("WARN: checking for RBD Image: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	if !exists {
+		log.Printf("WARN: Image does not exist: %s", name)
+		d.createImage(r)
+	}
 
 	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
 	// check that the image is not locked already
