@@ -829,7 +829,8 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
-	return sh("rbd", "map", "--id", d.user, "--pool", pool, imagename)
+	sh("rbd", "map", "--id", d.user, "--pool", pool, imagename)
+	return getRBDDeviceName(imagename)
 }
 
 // unmapImageDevice will release the mapped kernel device
@@ -871,6 +872,18 @@ func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
 		return err
 	}
 	return nil
+}
+
+func getRBDDeviceName(device string) (string, error) {
+        cmd := "rbd showmapped | grep "+device+" | awk '{print $5}' | sed -e 's/$//'"
+        out, err := exec.Command("bash","-c",cmd).Output()
+        if isDebugEnabled() {
+                log.Printf("DEBUG: getRBDDeviceName CMD: %q", cmd)
+        }
+        if err != nil {
+                return "",err
+        }
+        return strings.Trim(string(out), " \n"), err
 }
 
 // Callouts to other shell commands: blkid, mount, umount
