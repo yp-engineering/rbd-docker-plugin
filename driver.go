@@ -357,6 +357,60 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 
 // Path returns the path to host directory mountpoint for volume.
 //
+// POST /VolumeDriver.List
+//
+// Request:
+//    {}
+//    Docker needs reminding of the path to the volume on the host.
+//
+// Response:
+//    { "Volumes": [ { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" } ], "Err": null }
+//    Respond with the path on the host filesystem where the volume has been
+//    made available, and/or a string error if an error occurred.
+//
+func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
+	vols := make([]*dkvolume.Volume, 0, len(d.volumes))
+	for k, v := range d.volumes {
+		vols = append(vols, &dkvolume.Volume{
+			Name: v.name,
+			Mountpoint: k,
+		})
+	}
+
+	log.Printf("INFO: List request => %s", vols)
+	return dkvolume.Response{Volumes: vols}
+}
+
+// Path returns the path to host directory mountpoint for volume.
+//
+// POST /VolumeDriver.Get
+//
+// Request:
+//    { "Name": "volume_name" }
+//    Docker needs reminding of the path to the volume on the host.
+//
+// Response:
+//    { "Volume": { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" }, "Err": null }
+//    Respond with the path on the host filesystem where the volume has been
+//    made available, and/or a string error if an error occurred.
+//
+func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
+	// parse full image name for optional/default pieces
+	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	if err != nil {
+		log.Printf("ERROR: parsing volume: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+
+	// TODO: should we return only known mapped vols? (e.g. d.volumes[r.Name] ...) ?
+
+	mountPath := d.mountpoint(pool, name)
+	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
+	return dkvolume.Response{Volume: &dkvolume.Volume{Name: r.Name, Mountpoint: mountPath}}
+}
+
+// Path returns the path to host directory mountpoint for volume.
+//
 // POST /VolumeDriver.Path
 //
 // Request:
