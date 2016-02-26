@@ -361,16 +361,19 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 //
 // Request:
 //    {}
-//    Docker needs reminding of the path to the volume on the host.
+//    List the volumes mapped by this plugin.
 //
 // Response:
 //    { "Volumes": [ { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" } ], "Err": null }
-//    Respond with the path on the host filesystem where the volume has been
-//    made available, and/or a string error if an error occurred.
+//    Respond with an array containing pairs of known volume names and their
+//    respective paths on the host filesystem (where the volumes have been
+//    made available).
 //
 func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
 	vols := make([]*dkvolume.Volume, 0, len(d.volumes))
+	// for each registered mountpoint
 	for k, v := range d.volumes {
+		// append it and its name to the result
 		vols = append(vols, &dkvolume.Volume{
 			Name: v.name,
 			Mountpoint: k,
@@ -391,8 +394,9 @@ func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
 //
 // Response:
 //    { "Volume": { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" }, "Err": null }
-//    Respond with the path on the host filesystem where the volume has been
-//    made available, and/or a string error if an error occurred.
+//    Respond with a tuple containing the name of the queried volume and the
+//    path on the host filesystem where the volume has been made available,
+//    and/or a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 	// parse full image name for optional/default pieces
