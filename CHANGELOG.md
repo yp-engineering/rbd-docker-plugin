@@ -3,6 +3,18 @@ All notable changes to project should be documented in this file.
 We attempt to adhere to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+### Added
+### Removed
+### Changed
+
+## [0.4.2] - 2016-03-16
+### Changed
+- Update logrotate config to restart instead of reload
+### Added 
+- Some new marathon-tester configs for running a test container in
+  Marathon/Mesos environment
+
 ## [0.4.1] - 2015-12-03
 ### Changed
 - Update systemd service unit to add --config /etc/ceph/ceph.conf 
