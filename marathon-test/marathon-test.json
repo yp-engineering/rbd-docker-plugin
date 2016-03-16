@@ -3,7 +3,8 @@
     "type": "DOCKER",
     "docker": {
       "network": "HOST",
-      "image": "centos:centos6.6",
+      "image": "rbd-marathon-test:latest",
+      "forcePullImage": true,
       "parameters": [
           { "key": "volume-driver", "value": "rbd" },
           { "key": "volume", "value": "foo:/mnt/foo:rw" }
@@ -11,10 +12,9 @@
     },
     "volumes": [ ]
   },
-  "cmd": "(while : ; do uptime; sleep 10 ; done) | tee /mnt/foo/uptime.log",
-  "id": "plugin-demo",
+  "id": "rbd-plugin-tester",
   "instances": 1,
-  "cpus": 0.5,
+  "cpus": 0.1,
   "mem": 256,
   "uris": []
 }
