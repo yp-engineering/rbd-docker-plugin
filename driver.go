@@ -19,7 +19,7 @@ package main
 // golang github code examples:
 // - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
 // - https://github.com/ceph/go-ceph
-// - https://github.com/calavera/dkvolume
+// - https://github.com/docker/go-plugins-helpers/tree/master/volume
 // - https://github.com/calavera/docker-volume-glusterfs
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
 
@@ -104,7 +104,7 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 //
 // Implement the Docker VolumeDriver API via dkvolume interface
 //
-// Using https://github.com/calavera/dkvolume
+// Using https://github.com/docker/go-plugins-helpers/tree/master/volume
 //
 // ************************************************************
 
