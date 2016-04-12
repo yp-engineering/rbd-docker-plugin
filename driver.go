@@ -18,8 +18,8 @@ package main
 //
 // golang github code examples:
 // - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
-// - https://github.com/noahdesu/go-ceph
-// - https://github.com/calavera/dkvolume
+// - https://github.com/ceph/go-ceph
+// - https://github.com/docker/go-plugins-helpers/tree/master/volume
 // - https://github.com/calavera/docker-volume-glusterfs
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
 
@@ -36,8 +36,8 @@ import (
 	"sync"
 
 	dkvolume "github.com/docker/go-plugins-helpers/volume"
-	"github.com/noahdesu/go-ceph/rados"
-	"github.com/noahdesu/go-ceph/rbd"
+	"github.com/ceph/go-ceph/rados"
+	"github.com/ceph/go-ceph/rbd"
 )
 
 var (
@@ -104,7 +104,7 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 //
 // Implement the Docker VolumeDriver API via dkvolume interface
 //
-// Using https://github.com/calavera/dkvolume
+// Using https://github.com/docker/go-plugins-helpers/tree/master/volume
 //
 // ************************************************************
 
@@ -469,7 +469,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 
 // shutdown closes the connection - maybe not needed unless we recreate conn?
 // more info:
-// - https://github.com/noahdesu/go-ceph/blob/master/rados/ioctx.go#L127
+// - https://github.com/ceph/go-ceph/blob/f251b53/rados/ioctx.go#L140
 // - http://ceph.com/docs/master/rados/api/librados/
 func (d *cephRBDVolumeDriver) shutdown() {
 	log.Println("INFO: shutdown() called")
