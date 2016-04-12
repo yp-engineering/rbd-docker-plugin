@@ -83,7 +83,7 @@ fi
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
 
 %changelog
-* Thu Sep 10 2015 sheepkiller
+* Thu Sep 10 2015 ct16k
 - add logrotate
 - fix runtime deps
 * Wed Sep 09 2015 sheepkiller

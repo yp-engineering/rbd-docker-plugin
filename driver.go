@@ -35,9 +35,9 @@ import (
 	"strings"
 	"sync"
 
-	dkvolume "github.com/docker/go-plugins-helpers/volume"
 	"github.com/ceph/go-ceph/rados"
 	"github.com/ceph/go-ceph/rbd"
+	dkvolume "github.com/docker/go-plugins-helpers/volume"
 )
 
 var (
@@ -355,7 +355,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	return dkvolume.Response{Mountpoint: mount}
 }
 
-// Path returns the path to host directory mountpoint for volume.
+// Get the list of volumes registered with the plugin.
 //
 // POST /VolumeDriver.List
 //
@@ -375,7 +375,7 @@ func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
 	for k, v := range d.volumes {
 		// append it and its name to the result
 		vols = append(vols, &dkvolume.Volume{
-			Name: v.name,
+			Name:       v.name,
 			Mountpoint: k,
 		})
 	}
@@ -384,7 +384,7 @@ func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
 	return dkvolume.Response{Volumes: vols}
 }
 
-// Path returns the path to host directory mountpoint for volume.
+// Get the volume info.
 //
 // POST /VolumeDriver.Get
 //
