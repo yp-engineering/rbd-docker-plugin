@@ -12,5 +12,5 @@ env:
 	wget -O ~/rpmbuild/SOURCES/rbd-docker-plugin_logrotate https://github.com/yp-engineering/rbd-docker-plugin/blob/master/logrotate.d/rbd-docker-plugin_logrotate
 
 depends:
-	yum install -y http://ceph.com/rpm-hammer/el7/noarch/ceph-release-1-1.el7.noarch.rpm epel-release
+	yum install -y http://ceph.com/rpm-infernalis/el7/noarch/ceph-release-1-1.el7.noarch.rpm epel-release
 	yum install -y librados2-devel librbd1-devel golang git epel-release rpmdevtools make wget
