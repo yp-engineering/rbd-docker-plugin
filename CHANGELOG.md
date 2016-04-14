@@ -8,6 +8,13 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [0.5.0] - 2016-04-13
+### Changed
+- pulled latest from upstream yp-engineering/rbd-docker-plugin
+  - add new docker volume api support (Get, List)
+  - use ceph/go-ceph instead of noahdesu/go-ceph
+  - use docker/go-plugins-helpers/ instead of calavera/dkvolume
+
 ## [0.4.2] - 2016-03-16
 ### Changed
 - Update logrotate config to restart instead of reload
