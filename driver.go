@@ -24,7 +24,7 @@ package main
 // golang github code examples:
 // - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
 // - https://github.com/ceph/go-ceph
-// - https://github.com/calavera/dkvolume
+// - https://github.com/docker/go-plugins-helpers/tree/master/volume
 // - https://github.com/calavera/docker-volume-glusterfs
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
 
@@ -42,9 +42,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/calavera/dkvolume"
 	"github.com/ceph/go-ceph/rados"
 	"github.com/ceph/go-ceph/rbd"
+	dkvolume "github.com/docker/go-plugins-helpers/volume"
 )
 
 // TODO: use versioned dependencies -- e.g. newest dkvolume already has breaking changes?
@@ -134,7 +134,7 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 //
 // Implement the Docker VolumeDriver API via dkvolume interface
 //
-// Using https://github.com/calavera/dkvolume
+// Using https://github.com/docker/go-plugins-helpers/tree/master/volume
 //
 // ************************************************************
 
@@ -157,6 +157,12 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 	log.Printf("INFO: API Create(%s)", r.Name)
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	return d.createImage(r)
+}
+
+func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
+	log.Printf("INFO: createImage(%s)", r.Name)
 
 	// parse image name optional/default pieces
 	pool, name, size, err := d.parseImagePoolNameSize(r.Name)
@@ -330,6 +336,25 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 		defer d.shutdown()
 	}
 
+	// Does the image exist? If not, call Create
+	exists, err := d.rbdImageExists(pool, name)
+	if err != nil {
+		log.Printf("WARN: checking for RBD Image: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+	if !exists {
+		log.Printf("WARN: Image does not exist: %s", name)
+		d.createImage(r)
+	}
+
+	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
+	// check that the image is not locked already
+	//locked, err := d.rbdImageIsLocked(name)
+	//if locked || err != nil {
+	//	log.Printf("ERROR: checking for RBD Image(%s) lock: %s", name, err)
+	//	return dkvolume.Response{Err: "RBD Image locked"}
+	//}
+
 	// attempt to lock
 	locker, err := d.lockImage(pool, name)
 	if err != nil {
@@ -386,6 +411,64 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	}
 
 	return dkvolume.Response{Mountpoint: mount}
+}
+
+// Get the list of volumes registered with the plugin.
+//
+// POST /VolumeDriver.List
+//
+// Request:
+//    {}
+//    List the volumes mapped by this plugin.
+//
+// Response:
+//    { "Volumes": [ { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" } ], "Err": null }
+//    Respond with an array containing pairs of known volume names and their
+//    respective paths on the host filesystem (where the volumes have been
+//    made available).
+//
+func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
+	vols := make([]*dkvolume.Volume, 0, len(d.volumes))
+	// for each registered mountpoint
+	for k, v := range d.volumes {
+		// append it and its name to the result
+		vols = append(vols, &dkvolume.Volume{
+			Name:       v.name,
+			Mountpoint: k,
+		})
+	}
+
+	log.Printf("INFO: List request => %s", vols)
+	return dkvolume.Response{Volumes: vols}
+}
+
+// Get the volume info.
+//
+// POST /VolumeDriver.Get
+//
+// Request:
+//    { "Name": "volume_name" }
+//    Docker needs reminding of the path to the volume on the host.
+//
+// Response:
+//    { "Volume": { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" }, "Err": null }
+//    Respond with a tuple containing the name of the queried volume and the
+//    path on the host filesystem where the volume has been made available,
+//    and/or a string error if an error occurred.
+//
+func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
+	// parse full image name for optional/default pieces
+	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	if err != nil {
+		log.Printf("ERROR: parsing volume: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+
+	// TODO: should we return only known mapped vols? (e.g. d.volumes[r.Name] ...) ?
+
+	mountPath := d.mountpoint(pool, name)
+	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
+	return dkvolume.Response{Volume: &dkvolume.Volume{Name: r.Name, Mountpoint: mountPath}}
 }
 
 // Path returns the path to host directory mountpoint for volume.
@@ -512,7 +595,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 
 // shutdown closes the connection - maybe not needed unless we recreate conn?
 // more info:
-// - https://github.com/ceph/go-ceph/blob/master/rados/ioctx.go#L127
+// - https://github.com/ceph/go-ceph/blob/f251b53/rados/ioctx.go#L140
 // - http://ceph.com/docs/master/rados/api/librados/
 func (d *cephRBDVolumeDriver) shutdown() {
 	log.Println("INFO: Ceph RBD Driver shutdown() called")

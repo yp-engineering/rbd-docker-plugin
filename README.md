@@ -189,7 +189,7 @@ This plugin can create RBD images with XFS filesystem.
 
 - https://plugins-demo-2015.github.io
 - [Flocker Docker Plugin](https://docs.clusterhq.com/en/1.0.3/labs/docker-plugin.html)
-- VolumeDriver golang framework: https://github.com/calavera/dkvolume
+- VolumeDriver golang framework: https://github.com/docker/go-plugins-helpers/tree/master/volume
 - GlusterFS Example: https://github.com/calavera/docker-volume-glusterfs
 - KeyWhiz example: https://github.com/calavera/docker-volume-keywhiz
 - Ceph Rados, RBD golang lib: https://github.com/ceph/go-ceph

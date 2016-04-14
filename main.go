@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/calavera/dkvolume"
+	dkvolume "github.com/docker/go-plugins-helpers/volume"
 )
 
 var (

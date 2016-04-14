@@ -14,6 +14,7 @@ Source0: https://github.com/yp-engineering/rbd-docker-plugin/archive/%{version}.
 Source1: rbd-docker-plugin.service
 Source2: rbd-docker-plugin.conf
 Source3: rbd-docker-plugin-wrapper
+Source4: rbd-docker-plugin_logrotate
 ExclusiveArch:  x86_64
 BuildRoot: %{_tmppath}/%{name}-%{version}
 BuildRequires: golang >= 1.4.2
@@ -28,7 +29,6 @@ Requires(postun): systemd
 Requires: ceph >= 0.94.0
 Requires: librados2 >= 0.94.0
 Requires: librbd1 >= 0.94.0
-
 Requires: docker-engine >= 1.8.0
 
 %description
@@ -52,18 +52,22 @@ install -d %{buildroot}%{_unitdir}
 install -d %{buildroot}%{_sysconfdir}/docker/
 install -p -m 755 dist/%{name} %{buildroot}%{_libexecdir}/%{name}
 install -p -m 644 %{S:1}  %{buildroot}%{_unitdir}/
-
 sed -e "s,%%LIBEXEC%%,%{_libexecdir}," %{S:3} >  %{buildroot}%{_bindir}/rbd-docker-plugin-wrapper
 chmod 755 %{buildroot}%{_bindir}/rbd-docker-plugin-wrapper
 sed -e "s,%%LIBEXEC%%,%{_libexecdir}," %{S:2} > %{buildroot}%{_sysconfdir}/docker/rbd-docker-plugin.conf
 chmod 644 %{buildroot}%{_sysconfdir}/docker/rbd-docker-plugin.conf
+
+mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d
+install -m 644 %{S:4} $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/rbd-docker-plugin
 
 %files
 %defattr(-,root,root)
 %{_unitdir}/rbd-docker-plugin.service
 %{_libexecdir}/%{name}
 %{_bindir}/rbd-docker-plugin-wrapper
+%{_sysconfdir}/logrotate.d/rbd-docker-plugin
 %config(noreplace) %{_sysconfdir}/docker/%{name}.conf
+
 %post
 %systemd_post rbd-docker-plugin.service
 
@@ -79,6 +83,9 @@ fi
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
 
 %changelog
+* Thu Sep 10 2015 ct16k
+- add logrotate
+- fix runtime deps
 * Wed Sep 09 2015 sheepkiller
 - move plugin to /usr/libexec
 - add wrapper + config
