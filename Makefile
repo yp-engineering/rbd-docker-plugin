@@ -15,7 +15,7 @@ INSTALL?=install
 
 BINARY=rbd-docker-plugin
 PKG_SRC=main.go driver.go version.go
-PKG_SRC_TEST=$(PKG_SRC) driver_test.go
+PKG_SRC_TEST=$(PKG_SRC) driver_test.go unlock_test.go
 
 PACKAGE_BUILD=$(TMPDIR)/$(BINARY).tpkg.buildtmp
 
@@ -53,6 +53,7 @@ clean:
 uninstall:
 	@$(RM) -iv `which $(BINARY)`
 
+# FIXME: TODO: this micro-osd script leaves ceph-mds laying around -- fix it up
 test:
 	TMP_DIR=$$(mktemp -d) && \
 		./micro-osd.sh $$TMP_DIR && \
@@ -60,6 +61,15 @@ test:
 		ceph -s && \
 		go test -v && \
 		rm -rf $$TMP_DIR
+
+
+# use existing ceph installation instead of micro-osd.sh - expecting CEPH_CONF to be set ...
+CEPH_CONF ?= /etc/ceph/ceph.conf
+local_test:
+	@echo "Using CEPH_CONF=$(CEPH_CONF)"
+	test -n "${CEPH_CONF}" && \
+		ceph -s && \
+		go test -v
 
 dist:
 	mkdir dist
@@ -99,7 +109,7 @@ test_from_container: make/test
 
 # build relocatable tpkg
 # TODO: repair PATHS at install to set TPKG_HOME (assumed /home/ops)
-package: version build test
+package: version build local_test
 	$(RM) -fr $(PACKAGE_BUILD)
 	mkdir -p $(PACKAGE_BIN_DIR) $(PACKAGE_INIT_DIR) $(PACKAGE_SYSTEMD_DIR) $(PACKAGE_LOG_CONFIG_DIR)
 	$(INSTALL) $(PACKAGE_SCRIPT_FILES) $(PACKAGE_BUILD)/.
