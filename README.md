@@ -17,11 +17,12 @@
   * Mount - Locks, Maps and Mounts RBD Image to the Host system
   * Unmount - Unmounts, Unmaps and Unlocks the RBD Image on request
   * Remove - Removes (destroys) RBD Image on request
-    * only called for `docker run --rm -v ...` or `docker rm -v ... container` 
-    * controlled by `--remove` boolean flag (default false)
-    * if remove is true -> image is removed
-    * if remove is false -> image is renamed with _zz_ prefix for later culling
-
+    * only called for `docker run --rm -v ...` or `docker rm -v ...`
+    * action controlled by plugin's `--remove` flag, which can be one of three values:
+      - ''ignore'' - the call to delete the ceph rbd volume is ignored (default)
+      - ''rename'' - will cause image to be renamed with _zz_ prefix for later culling
+      - ''delete'' - will actually delete ceph rbd image (destructive)
+  * Get, List
 
 ## Plugin Setup
 

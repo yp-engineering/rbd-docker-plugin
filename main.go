@@ -6,6 +6,7 @@ package main
 // Ceph RBD VolumeDriver Docker Plugin, setup config and go
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -18,6 +19,8 @@ import (
 )
 
 var (
+	VALID_REMOVE_ACTIONS = []string{"ignore", "delete", "rename"}
+
 	// Plugin Option Flags
 	versionFlag        = flag.Bool("version", false, "Print version")
 	debugFlag          = flag.Bool("debug", false, "Debug output")
@@ -30,13 +33,39 @@ var (
 	rootMountDir       = flag.String("mount", dkvolume.DefaultDockerRootDirectory, "Mount directory for volumes on host")
 	logDir             = flag.String("logdir", "/var/log", "Logfile directory")
 	canCreateVolumes   = flag.Bool("create", false, "Can auto Create RBD Images")
-	canRemoveVolumes   = flag.Bool("remove", false, "Can Remove (destroy) RBD Images (default: false, volume will be renamed zz_name)")
 	defaultImageSizeMB = flag.Int("size", 20*1024, "RBD Image size to Create (in MB) (default: 20480=20GB)")
 	defaultImageFSType = flag.String("fs", "xfs", "FS type for the created RBD Image (must have mkfs.type)")
 	useGoCeph          = flag.Bool("go-ceph", false, "Use go-ceph library (default: false)")
 )
 
+// setup a validating flag for remove action
+type removeAction string
+
+func (a *removeAction) String() string {
+	return string(*a)
+}
+
+func (a *removeAction) Set(value string) error {
+	if !contains(VALID_REMOVE_ACTIONS, value) {
+		return errors.New(fmt.Sprintf("Invalid value: %s, valid values are: %q", value, VALID_REMOVE_ACTIONS))
+	}
+	*a = removeAction(value)
+	return nil
+}
+
+func contains(vals []string, check string) bool {
+	for _, v := range vals {
+		if check == v {
+			return true
+		}
+	}
+	return false
+}
+
+var removeActionFlag removeAction = "ignore"
+
 func init() {
+	flag.Var(&removeActionFlag, "remove", "Action to take on Remove: ignore, delete or rename")
 	flag.Parse()
 }
 
@@ -61,6 +90,7 @@ func main() {
 	defer shutdownLogging(logFile)
 
 	log.Printf("INFO: starting rbd-docker-plugin version %s", VERSION)
+	log.Printf("INFO: canCreateVolumes=%q, removeAction=%q", *canCreateVolumes, removeActionFlag)
 	log.Printf(
 		"INFO: Setting up Ceph Driver for PluginID=%s, cluster=%s, user=%s, pool=%s, mount=%s, config=%s, go-ceph=%s",
 		*pluginName,

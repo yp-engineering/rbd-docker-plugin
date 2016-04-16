@@ -8,6 +8,14 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.0.0] - 2016-04-15
+### Changed
+- bump major version with deprecated --remove boolean flag
+- --remove flag now takes one of three values: ignore, delete or rename
+  - ignore will just ignore the docker volume Remove call (new default)
+  - delete will destroy the rbd volume on Remove request
+  - rename will rename the rbd volume on Remove request, prefixed with `zz_`
+
 ## [0.5.0] - 2016-04-13
 ### Changed
 - pulled latest from upstream yp-engineering/rbd-docker-plugin
