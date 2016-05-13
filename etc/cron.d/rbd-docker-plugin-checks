@@ -1,5 +1,3 @@
-MAILTO="dm9831@yp.com"
-#MAILTO="ypec-dev@lists.yellowpages.com"
 SHELL=/bin/bash
 TPKG_HOME=/home/ops
 
