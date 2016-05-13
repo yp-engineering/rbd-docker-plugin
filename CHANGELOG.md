@@ -8,6 +8,11 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+
+## [1.1.0] - 2016-04-15
+### Added
+- added a cron job and check script for the Ceph configs and tpkg update
+
 ## [1.0.0] - 2016-04-15
 ### Changed
 - bump major version with deprecated --remove boolean flag

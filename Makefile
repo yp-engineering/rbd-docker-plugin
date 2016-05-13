@@ -21,15 +21,18 @@ PACKAGE_BUILD=$(TMPDIR)/$(BINARY).tpkg.buildtmp
 
 PACKAGE_BIN_DIR=$(PACKAGE_BUILD)/reloc/bin
 PACKAGE_ETC_DIR=$(PACKAGE_BUILD)/reloc/etc
-PACKAGE_INIT_DIR=$(PACKAGE_BUILD)/reloc/etc/init
-PACKAGE_LOG_CONFIG_DIR=$(PACKAGE_BUILD)/reloc/etc/logrotate.d
-PACKAGE_SYSTEMD_DIR=$(PACKAGE_BUILD)/reloc/etc/systemd/system
+PACKAGE_CRON_DIR=$(PACKAGE_ETC_DIR)/cron.d
+PACKAGE_INIT_DIR=$(PACKAGE_ETC_DIR)/init
+PACKAGE_LOG_CONFIG_DIR=$(PACKAGE_ETC_DIR)/logrotate.d
+PACKAGE_SYSTEMD_DIR=$(PACKAGE_ETC_DIR)/systemd/system
 
-PACKAGE_SYSTEMD_UNIT=systemd/rbd-docker-plugin.service
-PACKAGE_INIT=init/rbd-docker-plugin.conf
-PACKAGE_LOG_CONFIG=logrotate.d/rbd-docker-plugin_logrotate
-PACKAGE_CONFIG_FILES=tpkg.yml README.md LICENSE
-PACKAGE_SCRIPT_FILES=postinstall postremove
+CONFIG_FILES=tpkg.yml README.md LICENSE
+CRON_JOB=etc/cron.d/rbd-docker-plugin-checks
+SYSTEMD_UNIT=etc/systemd/rbd-docker-plugin.service
+UPSTART_INIT=etc/init/rbd-docker-plugin.conf
+LOG_CONFIG=etc/logrotate.d/rbd-docker-plugin_logrotate
+SCRIPT_FILES=postinstall postremove
+BIN_FILES=dist/$(BINARY) check-ceph-rbd-docker-plugin.sh
 
 # Run these if you have a local dev env setup, otherwise they will / can be run
 # in the container.
@@ -111,12 +114,13 @@ test_from_container: make/test
 # TODO: repair PATHS at install to set TPKG_HOME (assumed /home/ops)
 package: version build local_test
 	$(RM) -fr $(PACKAGE_BUILD)
-	mkdir -p $(PACKAGE_BIN_DIR) $(PACKAGE_INIT_DIR) $(PACKAGE_SYSTEMD_DIR) $(PACKAGE_LOG_CONFIG_DIR)
-	$(INSTALL) $(PACKAGE_SCRIPT_FILES) $(PACKAGE_BUILD)/.
-	$(INSTALL) -m 0644 $(PACKAGE_CONFIG_FILES) $(PACKAGE_BUILD)/.
-	$(INSTALL) -m 0644 $(PACKAGE_SYSTEMD_UNIT) $(PACKAGE_SYSTEMD_DIR)/.
-	$(INSTALL) -m 0644 $(PACKAGE_INIT) $(PACKAGE_INIT_DIR)/.
-	$(INSTALL) -m 0644 $(PACKAGE_LOG_CONFIG) $(PACKAGE_LOG_CONFIG_DIR)/.
-	$(INSTALL) dist/$(BINARY) $(PACKAGE_BIN_DIR)/.
+	mkdir -p $(PACKAGE_BIN_DIR) $(PACKAGE_INIT_DIR) $(PACKAGE_SYSTEMD_DIR) $(PACKAGE_LOG_CONFIG_DIR) $(PACKAGE_CRON_DIR)
+	$(INSTALL) $(SCRIPT_FILES) $(PACKAGE_BUILD)/.
+	$(INSTALL) $(BIN_FILES) $(PACKAGE_BIN_DIR)/.
+	$(INSTALL) -m 0644 $(CONFIG_FILES) $(PACKAGE_BUILD)/.
+	$(INSTALL) -m 0644 $(CRON_JOB) $(PACKAGE_CRON_DIR)/.
+	$(INSTALL) -m 0644 $(SYSTEMD_UNIT) $(PACKAGE_SYSTEMD_DIR)/.
+	$(INSTALL) -m 0644 $(UPSTART_INIT) $(PACKAGE_INIT_DIR)/.
+	$(INSTALL) -m 0644 $(LOG_CONFIG) $(PACKAGE_LOG_CONFIG_DIR)/.
 	sed -i "s/^version:.*/version: $(VERSION)/" $(PACKAGE_BUILD)/tpkg.yml
 	tpkg --make $(PACKAGE_BUILD) --out $(CURDIR)
