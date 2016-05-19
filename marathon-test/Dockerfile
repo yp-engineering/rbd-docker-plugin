@@ -8,11 +8,10 @@
 #        http://${MARATHON_HOST}:8080/v2/apps \
 #        -d@marathon-test.json
 
-FROM centos
+FROM gliderlabs/alpine:edge
 
 WORKDIR /root
 
 ENV RBD_TEST /mnt/foo/
 ADD run.sh /root/run.sh
-RUN chmod +x /root/run.sh
 CMD ["/root/run.sh"]
