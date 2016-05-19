@@ -6,11 +6,12 @@ package main
 // unit tests that don't rely on ceph
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"testing"
 
-        dkvolume "github.com/docker/go-plugins-helpers/volume"
+	dkvolume "github.com/docker/go-plugins-helpers/volume"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,11 +19,17 @@ import (
 // make fake cluster?
 // use dockerized container with ceph for tests?
 
+const (
+	TEST_SOCKET_PATH             = "/tmp/rbd-test.sock"
+	EXPECTED_ACTIVATION_RESPONSE = "{\"Implements\": [\"VolumeDriver\"]}"
+)
+
 var (
 	testDriver cephRBDVolumeDriver
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
 	cephConf := os.Getenv("CEPH_CONF")
 
 	testDriver = newCephRBDVolumeDriver(
@@ -35,6 +42,10 @@ func TestMain(m *testing.M) {
 		false,
 	)
 	defer testDriver.shutdown()
+
+	handler := dkvolume.NewHandler(testDriver)
+	// Serve won't return so spin off routine
+	go handler.ServeUnix("", TEST_SOCKET_PATH)
 
 	os.Exit(m.Run())
 }
@@ -97,9 +108,21 @@ func TestParseImagePoolNameSize_withPoolAndSize(t *testing.T) {
 	assert.Equal(t, 1024, size, "Size should be same")
 }
 
+// need a way to test the socket access using basic format - since this broke
+// in golang 1.6 with strict Host header checking even if using Unix sockets.
+// Requires socat and sudo
+//
+// Error response when built with golang 1.6: 400 Bad Request: missing required Host header
+func TestSocketActivate(t *testing.T) {
+	out, err := sh("bash", "-c", "echo \"POST /Plugin.Activate HTTP/1.1\r\n\" | sudo socat unix-connect:/tmp/rbd-test.sock STDIO")
+	assert.Nil(t, err, formatError("socat plugin activate", err))
+	assert.Contains(t, out, EXPECTED_ACTIVATION_RESPONSE, "Expecting Implements VolumeDriver message")
+
+}
+
 func TestSh_success(t *testing.T) {
 	out, err := sh("ls")
-	assert.Nil(t, err, formatError("sh", err))
+	assert.Nil(t, err, formatError("ls", err))
 	assert.Contains(t, out, "driver_test.go")
 }
 
