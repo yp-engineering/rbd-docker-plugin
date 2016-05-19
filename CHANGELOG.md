@@ -8,6 +8,12 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.1.1] - 2016-04-15
+### Changed
+- Due to issue with golang 1.6 and strict Host header requirements, we
+  cannot use golang 1.6 to compile our plugin since docker never sends
+  correct Host header for plugin socket usage.
+  * Recompiled with golang 1.5
 
 ## [1.1.0] - 2016-04-15
 ### Added
