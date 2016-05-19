@@ -52,6 +52,7 @@ install: build test
 
 clean:
 	go clean
+	rm -f dist/$(BINARY)
 
 uninstall:
 	@$(RM) -iv `which $(BINARY)`
