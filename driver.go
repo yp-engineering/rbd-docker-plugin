@@ -219,32 +219,32 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 	}
 
 	// attempt to gain lock before remove - lock disappears after rm or rename
-	locker, err := d.lockImage(pool, name)
-	if err != nil {
-		errString := fmt.Sprintf("Unable to lock image for remove: %s", name)
-		log.Println("ERROR: " + errString)
-		return dkvolume.Response{Err: errString}
-	}
+	// locker, err := d.lockImage(pool, name)
+	// if err != nil {
+	// 	errString := fmt.Sprintf("Unable to lock image for remove: %s", name)
+	// 	log.Println("ERROR: " + errString)
+	// 	return dkvolume.Response{Err: errString}
+	// }
 
-	if *canRemoveVolumes {
-		// remove it (for real - destroy it ... )
-		err = d.removeRBDImage(pool, name)
-		if err != nil {
-			errString := fmt.Sprintf("Unable to remove Ceph RBD Image(%s): %s", name, err)
-			log.Println("ERROR: " + errString)
-			defer d.unlockImage(pool, name, locker)
-			return dkvolume.Response{Err: errString}
-		}
-	} else {
-		// just rename it (in case needed later, or can be culled via script)
-		err = d.renameRBDImage(pool, name, "zz_"+name)
-		if err != nil {
-			errString := fmt.Sprintf("Unable to rename with zz_ prefix: RBD Image(%s): %s", name, err)
-			log.Println("ERROR: " + errString)
-			defer d.unlockImage(pool, name, locker)
-			return dkvolume.Response{Err: errString}
-		}
-	}
+	// if *canRemoveVolumes {
+	// 	// remove it (for real - destroy it ... )
+	// 	err = d.removeRBDImage(pool, name)
+	// 	if err != nil {
+	// 		errString := fmt.Sprintf("Unable to remove Ceph RBD Image(%s): %s", name, err)
+	// 		log.Println("ERROR: " + errString)
+	// 		defer d.unlockImage(pool, name, locker)
+	// 		return dkvolume.Response{Err: errString}
+	// 	}
+	// } else {
+	// 	// just rename it (in case needed later, or can be culled via script)
+	// 	err = d.renameRBDImage(pool, name, "zz_"+name)
+	// 	if err != nil {
+	// 		errString := fmt.Sprintf("Unable to rename with zz_ prefix: RBD Image(%s): %s", name, err)
+	// 		log.Println("ERROR: " + errString)
+	// 		defer d.unlockImage(pool, name, locker)
+	// 		return dkvolume.Response{Err: errString}
+	// 	}
+	// }
 
 	delete(d.volumes, mount)
 	return dkvolume.Response{}
