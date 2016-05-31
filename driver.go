@@ -520,6 +520,70 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	return dkvolume.Response{}
 }
 
+func (d cephRBDVolumeDriver) InnerUnMount(imageName string) err {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	var err_msgs = []string{}
+
+	// parse full image name for optional/default pieces
+	pool, name, _, err := d.parseImagePoolNameSize(imageName)
+	if err != nil {
+		log.Printf("ERROR: parsing volume: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
+
+	mount := d.mountpoint(pool, name)
+
+	// check if it's in our mounts - we may not know about it if plugin was started late?
+	vol, found := d.volumes[mount]
+	if !found {
+		log.Println("WARN: Volume is not in known mounts: will attempt limited Unmount: " + name)
+		// set up a fake Volume with defaults ...
+		// - device is /dev/rbd/<pool>/<image> in newer ceph versions
+		// - assume we are the locker (will fail if locked from another host)
+		vol = &volume{
+			pool:   pool,
+			name:   name,
+			device: fmt.Sprintf("/dev/rbd/%s/%s", pool, name),
+			locker: d.localLockerCookie(),
+		}
+	}
+
+	// unmount
+	err = d.unmountDevice(vol.device)
+	if err != nil {
+		log.Printf("ERROR: unmounting device(%s): %s", vol.device, err)
+		// failsafe: will attempt to unmap and unlock
+		err_msgs = append(err_msgs, "Error unmounting device")
+	}
+
+	// unmap
+	err = d.unmapImageDevice(vol.device)
+	if err != nil {
+		log.Printf("ERROR: unmapping image device(%s): %s", vol.device, err)
+		// failsafe: attempt to unlock
+		err_msgs = append(err_msgs, "Error unmapping kernel device")
+	}
+
+	// unlock
+	err = d.unlockImage(vol.pool, vol.name, vol.locker)
+	if err != nil {
+		log.Printf("ERROR: unlocking RBD image(%s): %s", vol.name, err)
+		err_msgs = append(err_msgs, "Error unlocking image")
+	}
+
+	// forget it
+	delete(d.volumes, mount)
+
+	// check for piled up errors
+	if len(err_msgs) > 0 {
+		return errors.New(strings.Join(err_msgs, ", "))
+	}
+
+	return nil
+}
+
 // END Docker VolumeDriver Plugin API methods
 // ***************************************************************************
 
@@ -534,9 +598,15 @@ func (d *cephRBDVolumeDriver) shutdown() {
 	d.m.Lock()
 	defer d.m.Unlock()
 
+	// for each registered mountpoint
+	for k, v := range d.volumes {
+		d.InnerUnMount(v.name)
+	}
+
 	if d.defaultIoctx != nil {
 		d.defaultIoctx.Destroy()
 	}
+	
 	if d.conn != nil {
 		d.conn.Shutdown()
 	}
