@@ -520,7 +520,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	return dkvolume.Response{}
 }
 
-func (d cephRBDVolumeDriver) InnerUnMount(imageName string) err {
+func (d cephRBDVolumeDriver) InnerUnMount(imageName string) {
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -530,7 +530,7 @@ func (d cephRBDVolumeDriver) InnerUnMount(imageName string) err {
 	pool, name, _, err := d.parseImagePoolNameSize(imageName)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return
 	}
 
 	mount := d.mountpoint(pool, name)
@@ -578,10 +578,10 @@ func (d cephRBDVolumeDriver) InnerUnMount(imageName string) err {
 
 	// check for piled up errors
 	if len(err_msgs) > 0 {
-		return errors.New(strings.Join(err_msgs, ", "))
+		return
 	}
 
-	return nil
+	return
 }
 
 // END Docker VolumeDriver Plugin API methods
@@ -599,7 +599,7 @@ func (d *cephRBDVolumeDriver) shutdown() {
 	defer d.m.Unlock()
 
 	// for each registered mountpoint
-	for k, v := range d.volumes {
+	for _, v := range d.volumes {
 		d.InnerUnMount(v.name)
 	}
 
