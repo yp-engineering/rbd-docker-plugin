@@ -141,10 +141,19 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 // Create will ensure the RBD image requested is available.  Plugin requires
 // --create option to provision new RBD images.
 //
+// Docker Volume Create Options:
+//   size   - in MB
+//   pool
+//   fstype
+//
+//
 // POST /VolumeDriver.Create
 //
 // Request:
-//    { "Name": "volume_name" }
+//    {
+//      "Name": "volume_name",
+//      "Opts": {}
+//    }
 //    Instruct the plugin that the user wants to create a volume, given a user
 //    specified volume name. The plugin does not need to actually manifest the
 //    volume on the filesystem yet (until Mount is called).
@@ -154,7 +163,7 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 //    Respond with a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Create(%s)", r.Name)
+	log.Printf("INFO: API Create(%q)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -162,7 +171,9 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 }
 
 func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: createImage(%s)", r.Name)
+	log.Printf("INFO: createImage(%q)", r)
+
+	fstype := *defaultImageFSType
 
 	// parse image name optional/default pieces
 	pool, name, size, err := d.parseImagePoolNameSize(r.Name)
@@ -171,6 +182,22 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 		return dkvolume.Response{Err: err.Error()}
 	}
 
+	// Options to override from `docker volume create -o OPT=VAL ...`
+	if r.Options["pool"] != "" {
+		pool = r.Options["pool"]
+	}
+	if r.Options["size"] != "" {
+		size, err = strconv.Atoi(r.Options["size"])
+		if err != nil {
+			log.Printf("WARN: using default size. unable to parse int from %s: %s", r.Options["size"], err)
+			size = *defaultImageSizeMB
+		}
+	}
+	if r.Options["fstype"] != "" {
+		fstype = r.Options["fstype"]
+	}
+
+	// check for mount
 	mount := d.mountpoint(pool, name)
 
 	// do we already know about this volume? return early
@@ -201,7 +228,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 			return dkvolume.Response{Err: errString}
 		}
 		// try to create it ... use size and default fs-type
-		err = d.createRBDImage(pool, name, size, *defaultImageFSType)
+		err = d.createRBDImage(pool, name, size, fstype)
 		if err != nil {
 			errString := fmt.Sprintf("Unable to create Ceph RBD Image(%s): %s", name, err)
 			log.Println("ERROR: " + errString)
