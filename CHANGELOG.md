@@ -8,6 +8,11 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.2.1] - 2016-06-02
+### Changed
+- When rbd map does not return device name but no error, try default
+  device path (/dev/rbd/<pool>/<image>). Issue porcupie/rbd-docker-plugin#4
+
 ## [1.2.0] - 2016-06-02
 ### Added
 - Updated to pull in yp-engineering/rbd-docker-plugin v0.9.1.2, which
