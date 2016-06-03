@@ -8,6 +8,11 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.2.0] - 2016-06-02
+### Added
+- Updated to pull in yp-engineering/rbd-docker-plugin v0.9.1.2, which
+  includes support for Docker Volume Create options: size, pool, fstype
+
 ## [1.1.1] - 2016-04-15
 ### Changed
 - Due to issue with golang 1.6 and strict Host header requirements, we
