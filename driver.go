@@ -1095,7 +1095,13 @@ func (d *cephRBDVolumeDriver) goceph_renameRBDImage(pool, name, newname string) 
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {
-	return d.rbdsh(pool, "map", imagename)
+	device, err := d.rbdsh(pool, "map", imagename)
+	// NOTE: ubuntu rbd map seems to not return device. if no error, assume "default" /dev/rbd/<pool>/<image> device
+	if device == "" && err == nil {
+		device = fmt.Sprintf("/dev/rbd/%s/%s", pool, imagename)
+	}
+
+	return device, err
 }
 
 // unmapImageDevice will release the mapped kernel device
