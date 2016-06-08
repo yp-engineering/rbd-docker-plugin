@@ -250,7 +250,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 //    Respond with a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Remove(%q)", r)
+	log.Printf("INFO: API Remove(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -345,7 +345,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 //    made available, and/or a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Mount(%q)", r)
+	log.Printf("INFO: API Mount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
