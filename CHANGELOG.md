@@ -8,6 +8,16 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.2.2] - 2016-06-08
+### Changed
+- Docker is calling Unmount after failed Mount, causing trouble if
+  device is still in use by another container (locked by same node).
+The workaround / hack is to bail earlier in Unmount API call if rbd
+unmap fails with busy device error. This can leave the device usable but
+possibly in a funky state (unmounted from host but still mounted and
+accessible inside container)
+- related to porcupie/rbd-docker-plugin#5
+
 ## [1.2.1] - 2016-06-02
 ### Changed
 - When rbd map does not return device name but no error, try default
