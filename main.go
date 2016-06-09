@@ -172,7 +172,6 @@ func isDebugEnabled() bool {
 func setupLogging() (*os.File, error) {
 	// use date, time and filename for log output
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetPrefix(*pluginName + "-volume-plugin: ")
 
 	// setup logfile - path is set from logfileDir and pluginName
 	logfileName := logfilePath()

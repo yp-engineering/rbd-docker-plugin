@@ -50,7 +50,8 @@ import (
 // TODO: use versioned dependencies -- e.g. newest dkvolume already has breaking changes?
 
 var (
-	imageNameRegexp = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)(@([0-9]+))?$`) // optional pool or size in image name
+	imageNameRegexp    = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)(@([0-9]+))?$`) // optional pool or size in image name
+	rbdUnmapBusyRegexp = regexp.MustCompile(`^exit status 16$`)
 )
 
 // Volume is the Docker concept which we map onto a Ceph RBD Image
@@ -250,7 +251,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 //    Respond with a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Remove(%s)", r.Name)
+	log.Printf("INFO: API Remove(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -345,7 +346,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 //    made available, and/or a string error if an error occurred.
 //
 func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Mount(%s)", r.Name)
+	log.Printf("INFO: API Mount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -391,7 +392,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	locker, err := d.lockImage(pool, name)
 	if err != nil {
 		log.Printf("ERROR: locking RBD Image(%s): %s", name, err)
-		return dkvolume.Response{Err: "Unable to get Exlusive Lock"}
+		return dkvolume.Response{Err: "Unable to get Exclusive Lock"}
 	}
 
 	// map and mount the RBD image -- these are OS level commands, not avail in go-ceph
@@ -545,8 +546,13 @@ func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
 //    { "Err": null }
 //    Respond with a string error if an error occurred.
 //
+// FIXME: TODO: we are getting an Unmount call from docker daemon after a
+// failed Mount (e.g. device locked), which causes the device to be
+// unmounted/unmapped/unlocked while possibly in use by another container --
+// revisit the API, are we doing something wrong or perhaps we can fail sooner
+//
 func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
-	log.Printf("INFO: API Unmount(%s)", r.Name)
+	log.Printf("INFO: API Unmount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -587,6 +593,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	}
 
 	// unmount
+	// NOTE: this might succeed even if device is still in use inside container. device will dissappear from host side but still be usable inside container :(
 	err = d.unmountDevice(vol.device)
 	if err != nil {
 		log.Printf("ERROR: unmounting device(%s): %s", vol.device, err)
@@ -598,7 +605,13 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	err = d.unmapImageDevice(vol.device)
 	if err != nil {
 		log.Printf("ERROR: unmapping image device(%s): %s", vol.device, err)
-		// failsafe: attempt to unlock
+		// NOTE: rbd unmap exits 16 if device is still being used - unlike umount.  try to recover differently in that case
+		if rbdUnmapBusyRegexp.MatchString(err.Error()) {
+			// can't always re-mount and not sure if we should here ... will be cleaned up once original container goes away
+			log.Printf("WARN: unmap failed due to busy device, early exit from this Unmount request.")
+			return dkvolume.Response{Err: err.Error()}
+		}
+		// other error, failsafe: proceed to attempt to unlock
 		err_msgs = append(err_msgs, "Error unmapping kernel device")
 	}
 
