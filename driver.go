@@ -306,17 +306,6 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 
 	mount := d.mountpoint(pool, name)
 
-	// Does the image exist? If not, call Create
-	exists, err := d.rbdImageExists(pool, name)
-	if err != nil {
-		log.Printf("WARN: checking for RBD Image: %s", err)
-		return dkvolume.Response{Err: err.Error()}
-	}
-	if !exists {
-		log.Printf("WARN: Image does not exist: %s", name)
-		d.createImage(r)
-	}
-
 	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
 	// check that the image is not locked already
 	//locked, err := d.rbdImageIsLocked(name)
@@ -433,10 +422,22 @@ func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 		return dkvolume.Response{Err: err.Error()}
 	}
 
-	// TODO: should we return only known mapped vols? (e.g. d.volumes[r.Name] ...) ?
-
+	// Check to see if the image exists
+	exists, err := d.rbdImageExists(pool, name)
+	if err != nil {
+		log.Printf("WARN: checking for RBD Image: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
 	mountPath := d.mountpoint(pool, name)
+	if !exists {
+		log.Printf("WARN: Image %s does not exist", r.Name)
+		delete(d.volumes, mountPath)
+		return dkvolume.Response{Err: fmt.Sprintf("Image %s does not exist", r.Name)}
+	}
 	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
+
+	// TODO: what to do if the mountpoint registry (d.volumes) has a different name?
+
 	return dkvolume.Response{Volume: &dkvolume.Volume{Name: r.Name, Mountpoint: mountPath}}
 }
 
