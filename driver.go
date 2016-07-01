@@ -707,25 +707,27 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, s
 // rbdImageExists will check for an existing Ceph RBD Image
 func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error) {
 	log.Printf("INFO: rbdImageExists(%s/%s)", pool, findName)
-	if findName != "" {
-		ctx, err := d.openContext(pool)
-		if err != nil {
-			return false, err
-		}
-		defer d.shutdownContext(ctx)
-
-		rbdImageNames, err := rbd.GetImageNames(ctx)
-		if err != nil {
-			log.Printf("ERROR: Unable to get Ceph RBD Image list: %s", err)
-			return false, err
-		}
-		for _, imageName := range rbdImageNames {
-			if imageName == findName {
-				return true, nil
-			}
-		}
+	if findName == "" {
+		return false, fmt.Errorf("Empty Ceph RBD Image name")
 	}
-	return false, nil
+
+	ctx, err := d.openContext(pool)
+	if err != nil {
+		return false, err
+	}
+	defer d.shutdownContext(ctx)
+
+	img := rbd.GetImage(ctx, findName)
+	err = img.Open(true)
+	defer img.Close()
+	if err != nil {
+		if err == rbd.RbdErrorNotFound {
+			log.Printf("INFO: Ceph RBD Image ('%s') not found: %s", findName, err)
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // createRBDImage will create a new Ceph block device and make a filesystem on it
