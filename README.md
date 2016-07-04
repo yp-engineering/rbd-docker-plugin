@@ -7,8 +7,8 @@
   * plugin can only be configured for a single Ceph User (currently no 
     good way to pass things from docker -> plugin, get only volume name)
   * run multiple plugin instances for varying configs (ceph user, default pool, default size)
-  * can pass extra config via volume name to override default pool and creation size:
-    * docker run --volume-driver rbd -v poolname/imagename@size:/mnt/disk1 ...
+  * can pass extra config via volume name to override default pool:
+    * docker run --volume-driver rbd -v poolname/imagename:/mnt/disk1 ...
 
 * plugin supports all Docker VolumeDriver Plugin API commands:
   * Create - can provision Ceph RBD Image in a pool of a certain size
@@ -158,9 +158,8 @@ This plugin can create RBD images with XFS filesystem.
   * Volume will be locked, mapped and mounted to Host and bind-mounted to container at `/mnt/foo`
   * When container exits, the volume will be unmounted, unmapped and unlocked
   * You can control the RBD Pool and initial Size using this syntax:
-    * foo@1024 => pool=rbd (default), image=foo, size 1GB
+    * foo => pool=rbd (default), image=foo and default `--size` (20GB)
     * deep/foo =>  pool=deep, image=foo and default `--size` (20GB)
-    * deep/foo@1024 => pool=deep, image=foo, size 1GB
     - pool must already exist
 
 ### Misc

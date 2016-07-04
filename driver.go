@@ -41,7 +41,7 @@ import (
 )
 
 var (
-	imageNameRegexp = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)(@([0-9]+))?$`) // optional pool or size in image name
+	imageNameRegexp = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)$`)
 )
 
 // Volume is the Docker concept which we map onto a Ceph RBD Image
@@ -146,7 +146,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 	fstype := *defaultImageFSType
 
 	// parse image name optional/default pieces
-	pool, name, size, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -156,11 +156,11 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 	if r.Options["pool"] != "" {
 		pool = r.Options["pool"]
 	}
+	size := *defaultImageSizeMB
 	if r.Options["size"] != "" {
 		size, err = strconv.Atoi(r.Options["size"])
 		if err != nil {
 			log.Printf("WARN: using default size. unable to parse int from %s: %s", r.Options["size"], err)
-			size = *defaultImageSizeMB
 		}
 	}
 	if r.Options["fstype"] != "" {
@@ -220,7 +220,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 	defer d.m.Unlock()
 
 	// parse full image name for optional/default pieces
-	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -298,7 +298,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 	defer d.m.Unlock()
 
 	// parse full image name for optional/default pieces
-	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -416,7 +416,7 @@ func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
 //
 func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 	// parse full image name for optional/default pieces
-	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -456,7 +456,7 @@ func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 //
 func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
 	// parse full image name for optional/default pieces
-	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -491,7 +491,7 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
 	var err_msgs = []string{}
 
 	// parse full image name for optional/default pieces
-	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
+	pool, name, err := d.parseImagePoolName(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
 		return dkvolume.Response{Err: err.Error()}
@@ -652,33 +652,29 @@ func (d *cephRBDVolumeDriver) mountpoint(pool, name string) string {
 	return filepath.Join(d.root, pool, name)
 }
 
-// parseImagePoolNameSize parses out any optional parameters from Image Name
+// parseImagePoolName parses out any optional parameters from Image Name
 // passed from docker run. Fills in unspecified options with default pool or
 // size.
 //
 // Returns: pool, image-name, size, error
 //
-func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, string, int, error) {
+func (d *cephRBDVolumeDriver) parseImagePoolName(fullname string) (string, string, error) {
 	// Examples of regexp matches:
-	//   foo: ["foo" "" "" "foo" "" ""]
-	//   foo@1024: ["foo@1024" "" "" "foo" "@1024" "1024"]
-	//   pool/foo: ["pool/foo" "pool/" "pool" "foo" "" ""]
-	//   pool/foo@1024: ["pool/foo@1024" "pool/" "pool" "foo" "@1024" "1024"]
+	//   foo: ["foo" "" "" "foo"]
+	//   pool/foo: ["pool/foo" "pool/" "pool" "foo"]
 	//
 	// Match indices:
 	//   0: matched string
 	//   1: pool with slash
 	//   2: pool no slash
 	//   3: image name
-	//   4: size with @
-	//   5: size only
 	//
 	matches := imageNameRegexp.FindStringSubmatch(fullname)
 	if isDebugEnabled() {
-		log.Printf("DEBUG: parseImagePoolNameSize: \"%s\": %q", fullname, matches)
+		log.Printf("DEBUG: parseImagePoolName: \"%s\": %q", fullname, matches)
 	}
-	if len(matches) != 6 {
-		return "", "", 0, errors.New("Unable to parse image name: " + fullname)
+	if len(matches) != 4 {
+		return "", "", errors.New("Unable to parse image name: " + fullname)
 	}
 
 	// 2: pool
@@ -690,18 +686,7 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, s
 	// 3: image
 	imagename := matches[3]
 
-	// 5: size
-	size := *defaultImageSizeMB
-	if matches[5] != "" {
-		var err error
-		size, err = strconv.Atoi(matches[5])
-		if err != nil {
-			log.Printf("WARN: using default. unable to parse int from %s: %s", matches[5], err)
-			size = *defaultImageSizeMB
-		}
-	}
-
-	return pool, imagename, size, nil
+	return pool, imagename, nil
 }
 
 // rbdImageExists will check for an existing Ceph RBD Image
