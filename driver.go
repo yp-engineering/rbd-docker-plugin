@@ -29,8 +29,6 @@ package main
 // - https://github.com/AcalephStorage/docker-volume-ceph-rbd
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -1162,37 +1160,4 @@ func (d *cephRBDVolumeDriver) rbdsh(pool, command string, args ...string) (strin
 		args = append([]string{"--pool", pool}, args...)
 	}
 	return sh("rbd", args...)
-}
-
-// sh is a simple os.exec Command tool, returns trimmed string output
-func sh(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	if isDebugEnabled() {
-		log.Printf("DEBUG: sh CMD: %q", cmd)
-	}
-	// TODO: capture and output STDERR to logfile?
-	out, err := cmd.Output()
-	return strings.Trim(string(out), " \n"), err
-}
-
-// grepLines pulls out lines that match a string (no regex ... yet)
-func grepLines(data string, like string) []string {
-	var result = []string{}
-	if like == "" {
-		log.Printf("ERROR: unable to look for empty pattern")
-		return result
-	}
-	like_bytes := []byte(like)
-
-	scanner := bufio.NewScanner(strings.NewReader(data))
-	for scanner.Scan() {
-		if bytes.Contains(scanner.Bytes(), like_bytes) {
-			result = append(result, scanner.Text())
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		log.Printf("WARN: error scanning string for %s: %s", like, err)
-	}
-
-	return result
 }
