@@ -31,13 +31,19 @@ type ShResult struct {
 	Err    error  // go error, not STDERR
 }
 
+// shWithDefaultTimeout will use the defaultShellTimeout so you dont have to pass one
+func shWithDefaultTimeout(name string, args ...string) (string, error) {
+	return shWithTimeout(defaultShellTimeout, name, args...)
+}
+
 // shWithTimeout will run the Cmd and wait for the specified duration
 func shWithTimeout(howLong time.Duration, name string, args ...string) (string, error) {
+	// duration can't be zero
+	if howLong <= 0 {
+		return "", fmt.Errorf("Timeout duration needs to be positive")
+	}
 	// set up the results channel
 	resultsChan := make(chan ShResult, 1)
-	if howLong == 0 {
-		howLong = defaultShellTimeout
-	}
 	if isDebugEnabled() {
 		log.Printf("DEBUG: shWithTimeout: %v, %s, %v", howLong, name, args)
 	}
