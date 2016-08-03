@@ -18,14 +18,7 @@ func TestSh_fail(t *testing.T) {
 	assert.NotNil(t, err, formatError("false", err))
 }
 
-func TestShWithTimeout_timeoutZeroFail(t *testing.T) {
-	// pass 0 as our duration to trigger the error
-	_, err := shWithTimeout(0, "sleep", "1")
-	assert.NotNil(t, err, "Expected to get error for duration")
-	assert.Contains(t, err.Error(), "duration needs to be positive", "Expected duration validation error")
-}
-
-func TestShWithTimeout_triggerDefaultTimeout(t *testing.T) {
+func TestShWithDefaultTimeout_triggerDefaultTimeout(t *testing.T) {
 	// reset this global for the tests
 	defaultShellTimeout = 2 * time.Second
 
@@ -39,6 +32,13 @@ func TestShWithTimeout_triggerDefaultTimeout(t *testing.T) {
 
 	// reset
 	defaultShellTimeout = 2 * 60 * time.Second
+}
+
+func TestShWithTimeout_timeoutZeroFail(t *testing.T) {
+	// pass 0 as our duration to trigger the error
+	_, err := shWithTimeout(0, "sleep", "1")
+	assert.NotNil(t, err, "Expected to get error for duration")
+	assert.Contains(t, err.Error(), "duration needs to be positive", "Expected duration validation error")
 }
 
 func TestShWithTimeout_cmdSucceeds(t *testing.T) {
