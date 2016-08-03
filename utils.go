@@ -38,6 +38,9 @@ func shWithTimeout(howLong time.Duration, name string, args ...string) (string, 
 	if howLong == 0 {
 		howLong = defaultShellTimeout
 	}
+	if isDebugEnabled() {
+		log.Printf("DEBUG: shWithTimeout: %v, %s, %v", howLong, name, args)
+	}
 
 	// fire up the goroutine for the actual shell command
 	go func() {
