@@ -39,6 +39,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ceph/go-ceph/rados"
 	"github.com/ceph/go-ceph/rbd"
@@ -844,8 +845,8 @@ func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size i
 		return err
 	}
 
-	// make the filesystem
-	_, err = sh(mkfs, device)
+	// make the filesystem - give it some time
+	_, err = shWithTimeout(5*time.Minute, mkfs, device)
 	if err != nil {
 		defer d.unmapImageDevice(device)
 		defer d.unlockImage(pool, name, lockname)
@@ -1128,7 +1129,7 @@ func (d *cephRBDVolumeDriver) unmapImageDevice(device string) error {
 func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 	// blkid Output:
 	//	xfs
-	blkid, err := sh("blkid", "-o", "value", "-s", "TYPE", device)
+	blkid, err := shWithDefaultTimeout("blkid", "-o", "value", "-s", "TYPE", device)
 	if err != nil {
 		return "", err
 	}
@@ -1141,13 +1142,13 @@ func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 
 // mountDevice will call mount on kernel device with a docker volume subdirectory
 func (d *cephRBDVolumeDriver) mountDevice(device, mountdir, fstype string) error {
-	_, err := sh("mount", "-t", fstype, device, mountdir)
+	_, err := shWithDefaultTimeout("mount", "-t", fstype, device, mountdir)
 	return err
 }
 
 // unmountDevice will call umount on kernel device to unmount from host's docker subdirectory
 func (d *cephRBDVolumeDriver) unmountDevice(device string) error {
-	_, err := sh("umount", device)
+	_, err := shWithDefaultTimeout("umount", device)
 	return err
 }
 
@@ -1159,5 +1160,5 @@ func (d *cephRBDVolumeDriver) rbdsh(pool, command string, args ...string) (strin
 	if pool != "" {
 		args = append([]string{"--pool", pool}, args...)
 	}
-	return sh("rbd", args...)
+	return shWithDefaultTimeout("rbd", args...)
 }
