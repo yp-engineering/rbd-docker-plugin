@@ -358,27 +358,6 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
 
 	mount := d.mountpoint(pool, name)
 
-	// connect to Ceph so we can manipulate RBD Image
-	if d.useGoCeph {
-		err = d.connect(pool)
-		if err != nil {
-			log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
-			return dkvolume.Response{Err: err.Error()}
-		}
-		defer d.shutdown()
-	}
-
-	// Does the image exist? If not, call Create
-	exists, err := d.rbdImageExists(pool, name)
-	if err != nil {
-		log.Printf("WARN: checking for RBD Image: %s", err)
-		return dkvolume.Response{Err: err.Error()}
-	}
-	if !exists {
-		log.Printf("WARN: Image does not exist: %s", name)
-		d.createImage(r)
-	}
-
 	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
 	// check that the image is not locked already
 	//locked, err := d.rbdImageIsLocked(name)
@@ -496,10 +475,22 @@ func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 		return dkvolume.Response{Err: err.Error()}
 	}
 
-	// TODO: should we return only known mapped vols? (e.g. d.volumes[r.Name] ...) ?
-
+	// Check to see if the image exists
+	exists, err := d.rbdImageExists(pool, name)
+	if err != nil {
+		log.Printf("WARN: checking for RBD Image: %s", err)
+		return dkvolume.Response{Err: err.Error()}
+	}
 	mountPath := d.mountpoint(pool, name)
+	if !exists {
+		log.Printf("WARN: Image %s does not exist", r.Name)
+		delete(d.volumes, mountPath)
+		return dkvolume.Response{Err: fmt.Sprintf("Image %s does not exist", r.Name)}
+	}
 	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
+
+	// TODO: what to do if the mountpoint registry (d.volumes) has a different name?
+
 	return dkvolume.Response{Volume: &dkvolume.Volume{Name: r.Name, Mountpoint: mountPath}}
 }
 
@@ -782,19 +773,27 @@ func (d *cephRBDVolumeDriver) sh_rbdImageExists(pool, findName string) (bool, er
 
 func (d *cephRBDVolumeDriver) goceph_rbdImageExists(pool, findName string) (bool, error) {
 	log.Printf("INFO: checking if rbdImageExists(%s/%s)", pool, findName)
-	if findName != "" {
-		rbdImageNames, err := rbd.GetImageNames(d.ioctx)
-		if err != nil {
-			log.Printf("ERROR: Unable to get Ceph RBD Image list: %s", err)
-			return false, err
-		}
-		for _, imageName := range rbdImageNames {
-			if imageName == findName {
-				return true, nil
-			}
-		}
+	if findName == "" {
+		return false, fmt.Errorf("Empty Ceph RBD Image name")
 	}
-	return false, nil
+
+	ctx, err := d.openContext(pool)
+	if err != nil {
+		return false, err
+	}
+	defer d.shutdownContext(ctx)
+
+	img := rbd.GetImage(ctx, findName)
+	err = img.Open(true)
+	defer img.Close()
+	if err != nil {
+		if err == rbd.RbdErrorNotFound {
+			log.Printf("INFO: Ceph RBD Image ('%s') not found: %s", findName, err)
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // createRBDImage will create a new Ceph block device and make a filesystem on it
