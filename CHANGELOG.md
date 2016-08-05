@@ -8,6 +8,10 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.4.0] - 2016-08-05
+### Added
+- Merged upstream fixes for pull porcupie/rbd-docker-plugin#7
+
 ## [1.3.0] - 2016-08-05
 ### Added
 - Added goroutines and timeouts to all shell commands, hoping to prevent
