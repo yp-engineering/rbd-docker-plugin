@@ -8,6 +8,11 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.3.0] - 2016-08-05
+### Added
+- Added goroutines and timeouts to all shell commands, hoping to prevent
+  propagation of hung external procs to docker daemon
+
 ## [1.2.2] - 2016-06-08
 ### Changed
 - Docker is calling Unmount after failed Mount, causing trouble if
