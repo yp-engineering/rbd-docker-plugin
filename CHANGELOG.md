@@ -8,6 +8,11 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.4.1] - 2016-08-05
+### Changed
+- Bug fix from bad upstream merge: provide openContext and
+  shutdownContext
+
 ## [1.4.0] - 2016-08-05
 ### Added
 - Merged upstream fixes for pull porcupie/rbd-docker-plugin#7

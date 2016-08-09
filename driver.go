@@ -682,12 +682,9 @@ func (d *cephRBDVolumeDriver) connect(pool string) error {
 	d.conn = cephConn
 
 	// setup the requested pool context
-	ioctx, err := d.conn.OpenIOContext(pool)
+	ioctx, err := d.goceph_openContext(pool)
 	if err != nil {
-		// TODO: make sure we aren't hiding a useful error struct by casting to string?
-		msg := fmt.Sprintf("Unable to open context(%s): %s", pool, err)
-		log.Printf("ERROR: " + msg)
-		return errors.New(msg)
+		return err
 	}
 	d.ioctx = ioctx
 
@@ -777,11 +774,11 @@ func (d *cephRBDVolumeDriver) goceph_rbdImageExists(pool, findName string) (bool
 		return false, fmt.Errorf("Empty Ceph RBD Image name")
 	}
 
-	ctx, err := d.openContext(pool)
+	ctx, err := d.goceph_openContext(pool)
 	if err != nil {
 		return false, err
 	}
-	defer d.shutdownContext(ctx)
+	defer d.goceph_shutdownContext(ctx)
 
 	img := rbd.GetImage(ctx, findName)
 	err = img.Open(true)
@@ -794,6 +791,26 @@ func (d *cephRBDVolumeDriver) goceph_rbdImageExists(pool, findName string) (bool
 		return false, err
 	}
 	return true, nil
+}
+
+// goceph_shutdownContext will destroy any non-default ioctx
+func (d *cephRBDVolumeDriver) goceph_shutdownContext(ioctx *rados.IOContext) {
+	if ioctx != nil {
+		ioctx.Destroy()
+	}
+}
+
+// goceph_openContext provides access to a specific Ceph Pool
+func (d *cephRBDVolumeDriver) goceph_openContext(pool string) (*rados.IOContext, error) {
+	// setup the requested pool context
+	ioctx, err := d.conn.OpenIOContext(pool)
+	if err != nil {
+		// TODO: make sure we aren't hiding a useful error struct by casting to string?
+		msg := fmt.Sprintf("Unable to open context(%s): %s", pool, err)
+		log.Printf("ERROR: " + msg)
+		return ioctx, errors.New(msg)
+	}
+	return ioctx, nil
 }
 
 // createRBDImage will create a new Ceph block device and make a filesystem on it
