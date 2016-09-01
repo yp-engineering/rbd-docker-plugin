@@ -130,6 +130,17 @@ func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, root
 	return driver
 }
 
+// Capabilities
+// Scope: global - images managed using this plugin can be considered "global"
+// TODO: make configurable
+func (d cephRBDVolumeDriver) Capabilities(r dkvolume.Request) dkvolume.Response {
+	return dkvolume.Response{
+		Capabilities: dkvolume.Capability{
+			Scope: "global",
+		},
+	}
+}
+
 // ************************************************************
 //
 // Implement the Docker VolumeDriver API via dkvolume interface
