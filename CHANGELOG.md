@@ -8,6 +8,13 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.5.0] - 2016-09-01
+### Added
+- Updated plugin to include Capabilities() method and new method
+  signatures for Mount(MountRequest) and Unmount(UnmountRequest)
+- add xfs filesystem check before mount - if xfs-repair -n returns
+  error, Mount operation fails with note to manually repair
+
 ## [1.4.1] - 2016-08-05
 ### Changed
 - Bug fix from bad upstream merge: provide openContext and
