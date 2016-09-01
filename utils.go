@@ -31,6 +31,14 @@ type ShResult struct {
 	Err    error  // go error, not STDERR
 }
 
+type ShTimeoutError struct {
+	timeout time.Duration
+}
+
+func (e ShTimeoutError) Error() string {
+	return fmt.Sprintf("Reached TIMEOUT on shell command")
+}
+
 // shWithDefaultTimeout will use the defaultShellTimeout so you dont have to pass one
 func shWithDefaultTimeout(name string, args ...string) (string, error) {
 	return shWithTimeout(defaultShellTimeout, name, args...)
@@ -58,7 +66,7 @@ func shWithTimeout(howLong time.Duration, name string, args ...string) (string, 
 	case res := <-resultsChan:
 		return res.Output, res.Err
 	case <-time.After(howLong):
-		return "", fmt.Errorf("Reached TIMEOUT on shell command")
+		return "", ShTimeoutError{timeout: howLong}
 	}
 
 	return "", nil
