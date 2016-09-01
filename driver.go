@@ -355,7 +355,8 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 //    Respond with the path on the host filesystem where the volume has been
 //    made available, and/or a string error if an error occurred.
 //
-func (d cephRBDVolumeDriver) Mount(r dkvolume.Request) dkvolume.Response {
+// TODO: utilize the new MountRequest.ID field to track volumes
+func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 	log.Printf("INFO: API Mount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -552,7 +553,8 @@ func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
 // unmounted/unmapped/unlocked while possibly in use by another container --
 // revisit the API, are we doing something wrong or perhaps we can fail sooner
 //
-func (d cephRBDVolumeDriver) Unmount(r dkvolume.Request) dkvolume.Response {
+// TODO: utilize the new UnmountRequest.ID field to track volumes
+func (d cephRBDVolumeDriver) Unmount(r dkvolume.UnmountRequest) dkvolume.Response {
 	log.Printf("INFO: API Unmount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
