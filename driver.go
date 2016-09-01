@@ -404,6 +404,16 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 		fstype = *defaultImageFSType
 	}
 
+	// double check image filesystem if possible
+	err = d.verifyDeviceFilesystem(device, fstype)
+	if err != nil {
+		log.Printf("ERROR: filesystem may need repairs: %s", err)
+		// failsafe: need to release lock and unmap kernel device
+		defer d.unmapImageDevice(device)
+		defer d.unlockImage(pool, name, locker)
+		return dkvolume.Response{Err: "Image filesystem has errors, requires manual repairs"}
+	}
+
 	// check for mountdir - create if necessary
 	err = os.MkdirAll(mount, os.ModeDir|os.FileMode(int(0775)))
 	if err != nil {
@@ -1167,6 +1177,30 @@ func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 	} else {
 		return "", errors.New("Unable to determine device fs type from blkid")
 	}
+}
+
+// verifyDeviceFilesystem will attempt to check XFS filesystems for errors
+func (d *cephRBDVolumeDriver) verifyDeviceFilesystem(device, fstype string) error {
+	if fstype != "xfs" {
+		return nil
+	}
+	// "xfs_repair  -n  (no  modify node) will return a status of 1 if filesystem
+	// corruption was detected and 0 if no filesystem corruption was detected." xfs_repair(8)
+	// TODO: make sure /usr/sbin is in PATH?
+
+	_, err := shWithDefaultTimeout("xfs_repair", "-n", device)
+	if err != nil {
+		switch err.(type) {
+		case ShTimeoutError:
+			// recover timeout errors - dont propagate
+			return nil
+		default:
+			// assume any other error is xfs error (?)
+			return err
+		}
+	}
+
+	return nil
 }
 
 // mountDevice will call mount on kernel device with a docker volume subdirectory
