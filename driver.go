@@ -425,7 +425,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 	}
 
 	// mount
-	err = d.mountDevice(device, mount, fstype)
+	err = d.mountDevice(fstype, device, mount)
 	if err != nil {
 		log.Printf("ERROR: mounting device(%s) to directory(%s): %s", device, mount, err)
 		// need to release lock and unmap kernel device
@@ -1196,7 +1196,7 @@ func (d *cephRBDVolumeDriver) verifyDeviceFilesystem(device, mount, fstype strin
 			return err
 		default:
 			// assume any other error is xfs error and attempt limited repair
-			return d.attemptLimitedXFSRepair(device, mount, fstype)
+			return d.attemptLimitedXFSRepair(fstype, device, mount)
 		}
 	}
 
@@ -1213,10 +1213,10 @@ func (d *cephRBDVolumeDriver) xfsRepairDryRun(device string) error {
 }
 
 // attemptLimitedXFSRepair will try mount/unmount and return result of another xfs-repair-n
-func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(device, mount, fstype string) (err error) {
+func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(fstype, device, mount string) (err error) {
 
 	// mount
-	err = d.mountDevice(device, mount, fstype)
+	err = d.mountDevice(fstype, device, mount)
 	if err != nil {
 		return err
 	}
@@ -1231,7 +1231,7 @@ func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(device, mount, fstype stri
 }
 
 // mountDevice will call mount on kernel device with a docker volume subdirectory
-func (d *cephRBDVolumeDriver) mountDevice(device, mountdir, fstype string) error {
+func (d *cephRBDVolumeDriver) mountDevice(fstype, device, mountdir string) error {
 	_, err := shWithDefaultTimeout("mount", "-t", fstype, device, mountdir)
 	return err
 }
