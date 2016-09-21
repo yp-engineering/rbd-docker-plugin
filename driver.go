@@ -1206,7 +1206,7 @@ func (d *cephRBDVolumeDriver) verifyDeviceFilesystem(device, mount, fstype strin
 func (d *cephRBDVolumeDriver) xfsRepairDryRun(device string) error {
 	// "xfs_repair  -n  (no  modify node) will return a status of 1 if filesystem
 	// corruption was detected and 0 if no filesystem corruption was detected." xfs_repair(8)
-	// TODO: make sure /usr/sbin is in PATH?
+	// TODO: can we check cmd output and ensure the mount/unmount is suggested by stale disk log?
 
 	_, err := shWithDefaultTimeout("xfs_repair", "-n", device)
 	return err
@@ -1214,6 +1214,7 @@ func (d *cephRBDVolumeDriver) xfsRepairDryRun(device string) error {
 
 // attemptLimitedXFSRepair will try mount/unmount and return result of another xfs-repair-n
 func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(fstype, device, mount string) (err error) {
+	log.Printf("WARN: attempting limited XFS repair (mount/unmount) of %s  %s", device, mount)
 
 	// mount
 	err = d.mountDevice(fstype, device, mount)
@@ -1227,6 +1228,7 @@ func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(fstype, device, mount stri
 		return err
 	}
 
+	// try a dry-run again and return result
 	return d.xfsRepairDryRun(device)
 }
 

@@ -8,6 +8,10 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [1.5.1] - 2016-09-20
+### Changed
+- Update XFS checks to mount/unmount to clear any disk logs
+
 ## [1.5.0] - 2016-09-01
 ### Added
 - Updated plugin to include Capabilities() method and new method
