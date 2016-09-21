@@ -405,7 +405,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 	}
 
 	// double check image filesystem if possible
-	err = d.verifyDeviceFilesystem(device, fstype)
+	err = d.verifyDeviceFilesystem(device, mount, fstype)
 	if err != nil {
 		log.Printf("ERROR: filesystem may need repairs: %s", err)
 		// failsafe: need to release lock and unmap kernel device
@@ -1180,27 +1180,54 @@ func (d *cephRBDVolumeDriver) deviceType(device string) (string, error) {
 }
 
 // verifyDeviceFilesystem will attempt to check XFS filesystems for errors
-func (d *cephRBDVolumeDriver) verifyDeviceFilesystem(device, fstype string) error {
+func (d *cephRBDVolumeDriver) verifyDeviceFilesystem(device, mount, fstype string) error {
+	// for now we only handle XFS
+	// TODO: use fsck for ext4?
 	if fstype != "xfs" {
 		return nil
 	}
+
+	// check XFS volume
+	err := d.xfsRepairDryRun(device)
+	if err != nil {
+		switch err.(type) {
+		case ShTimeoutError:
+			// propagate timeout errors - can't recover? system error? don't try to mount at that point
+			return err
+		default:
+			// assume any other error is xfs error and attempt limited repair
+			return d.attemptLimitedXFSRepair(device, mount, fstype)
+		}
+	}
+
+	return nil
+}
+
+func (d *cephRBDVolumeDriver) xfsRepairDryRun(device string) error {
 	// "xfs_repair  -n  (no  modify node) will return a status of 1 if filesystem
 	// corruption was detected and 0 if no filesystem corruption was detected." xfs_repair(8)
 	// TODO: make sure /usr/sbin is in PATH?
 
 	_, err := shWithDefaultTimeout("xfs_repair", "-n", device)
+	return err
+}
+
+// attemptLimitedXFSRepair will try mount/unmount and return result of another xfs-repair-n
+func (d *cephRBDVolumeDriver) attemptLimitedXFSRepair(device, mount, fstype string) (err error) {
+
+	// mount
+	err = d.mountDevice(device, mount, fstype)
 	if err != nil {
-		switch err.(type) {
-		case ShTimeoutError:
-			// recover timeout errors - dont propagate
-			return nil
-		default:
-			// assume any other error is xfs error (?)
-			return err
-		}
+		return err
 	}
 
-	return nil
+	// unmount
+	err = d.unmountDevice(device)
+	if err != nil {
+		return err
+	}
+
+	return d.xfsRepairDryRun(device)
 }
 
 // mountDevice will call mount on kernel device with a docker volume subdirectory
