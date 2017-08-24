@@ -6,18 +6,13 @@ set -u
 
 SYSTEMD_SERVICE=rbd-docker-plugin.service
 SYSTEMD_CONF=$TPKG_HOME/etc/systemd/system/$SYSTEMD_SERVICE
-
 UPSTART_CONF=$TPKG_HOME/etc/init/rbd-docker-plugin.conf
-
 LOGROTATE_CONF=$TPKG_HOME/etc/logrotate.d/rbd-docker-plugin_logrotate
-
-CRON_JOB=$TPKG_HOME/etc/cron.d/rbd-docker-plugin-checks
 
 # do some replacements to make this tpkg more relocatable
 if [ "$TPKG_HOME" != "/home/ops" ]; then
     sed -i.orig -e "s|/home/ops|$TPKG_HOME|g" "$SYSTEMD_CONF"
     sed -i.orig -e "s|/home/ops|$TPKG_HOME|g" "$UPSTART_CONF"
-    sed -i.orig -e "s|/home/ops|$TPKG_HOME|g" "$CRON_JOB"
 fi
 
 # centos 7.x / systemd
@@ -37,9 +32,4 @@ fi
 # logrotate config
 if test -d /etc/logrotate.d ; then
     install -m 0644 -v "$LOGROTATE_CONF" /etc/logrotate.d/.
-fi
-
-# cron job for checks
-if [ -f "$CRON_JOB" ]; then
-    install -m 0644 -v "$CRON_JOB" /etc/cron.d/.
 fi
