@@ -3,30 +3,29 @@
 // license that can be found in the LICENSE file.
 package main
 
-// Ceph RBD Docker VolumeDriver Plugin
-//
-// Run rbd-docker-plugin service, which creates a socket that can accept JSON
-// HTTP POSTs from docker engine.
-//
-// Due to some issues using the go-ceph library for locking/unlocking, we
-// reimplemented all functionality to use shell CLI commands via the 'rbd'
-// executable.  To re-enable old go-ceph functionality, use --go-ceph flag.
-//
-// System Requirements:
-//   - requires rbd CLI binary for shell operation (default)
-//   - requires ceph, rados and rbd development headers to use go-ceph
-//     yum install ceph-devel librados2-devel librbd1-devel
-//
-// Plugin name: rbd  (yp-rbd? ceph-rbd?) -- now configurable via --name
-//
-// 	docker run --volume-driver=rbd -v imagename:/mnt/dir IMAGE [CMD]
-//
-// golang github code examples:
-// - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
-// - https://github.com/ceph/go-ceph
-// - https://github.com/docker/go-plugins-helpers/tree/master/volume
-// - https://github.com/calavera/docker-volume-glusterfs
-// - https://github.com/AcalephStorage/docker-volume-ceph-rbd
+/**
+ * Ceph RBD Docker VolumeDriver Plugin
+ *
+ * rbd-docker-plugin service creates a UNIX socket that can accept Volume
+ * Driver requests (JSON HTTP POSTs) from Docker Engine.
+ *
+ * Historical note: Due to some issues using the go-ceph library for
+ * locking/unlocking, we reimplemented all functionality to use shell CLI
+ * commands via the 'rbd' executable.
+ *
+ * System Requirements:
+ *   - requires rbd CLI binary in PATH
+ *
+ * Plugin name: rbd  -- configurable via --name
+ *
+ * % docker run --volume-driver=rbd -v imagename:/mnt/dir IMAGE [CMD]
+ *
+ * golang github code examples:
+ * - https://github.com/docker/docker/blob/master/experimental/plugins_volume.md
+ * - https://github.com/docker/go-plugins-helpers/tree/master/volume
+ * - https://github.com/calavera/docker-volume-glusterfs
+ * - https://github.com/AcalephStorage/docker-volume-ceph-rbd
+ */
 
 import (
 	"errors"
@@ -41,48 +40,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ceph/go-ceph/rados"
-	"github.com/ceph/go-ceph/rbd"
-	dkvolume "github.com/docker/go-plugins-helpers/volume"
+	"github.com/docker/go-plugins-helpers/volume"
 )
-
-// TODO: use versioned dependencies -- e.g. newest dkvolume already has breaking changes?
 
 var (
 	imageNameRegexp    = regexp.MustCompile(`^(([-_.[:alnum:]]+)/)?([-_.[:alnum:]]+)(@([0-9]+))?$`) // optional pool or size in image name
 	rbdUnmapBusyRegexp = regexp.MustCompile(`^exit status 16$`)
 )
 
-// Volume is the Docker concept which we map onto a Ceph RBD Image
+// Volume is our local struct to store info about Ceph RBD Image
 type Volume struct {
-	name   string // RBD Image name
-	device string // local host kernel device (e.g. /dev/rbd1)
-	locker string // track the lock name
-	fstype string
-	pool   string
+	Name   string // RBD Image name
+	Device string // local host kernel device (e.g. /dev/rbd1)
+	Locker string // track the lock name
+	FStype string
+	Pool   string
+	ID     string
 }
-
-// TODO: finish modularizing and split out go-ceph and shell-cli implementations
-//
-// in progress: interface to abstract the ceph operations - either go-ceph lib or sh cli commands
-type RbdImageDriver interface {
-	// shutdown()
-	// connect(pool string) error // ?? only go-ceph
-
-	rbdImageExists(pool, findName string) (bool, error)
-	createRBDImage(pool string, name string, size int, fstype string) error
-	rbdImageIsLocked(pool, name string) (bool, error)
-	lockImage(pool, imagename string) (string, error)
-	unlockImage(pool, imagename, locker string) error
-	removeRBDImage(pool, name string) error
-	renameRBDImage(pool, name, newname string) error
-	// mapImage(pool, name string)
-	// unmapImageDevice(device string)
-	// mountDevice(device, mount, fstype string)
-	// unmountDevice(device string)
-}
-
-//
 
 // our driver type for impl func
 type cephRBDVolumeDriver struct {
@@ -102,55 +76,49 @@ type cephRBDVolumeDriver struct {
 	config  string             // ceph config file to read
 	volumes map[string]*Volume // track locally mounted volumes
 	m       *sync.Mutex        // mutex to guard operations that change volume maps or use conn
-
-	useGoCeph bool             // whether to setup/use go-ceph lib methods (default: false - use shell cli)
-	conn      *rados.Conn      // create a connection for each API operation
-	ioctx     *rados.IOContext // context for requested pool
 }
 
 // newCephRBDVolumeDriver builds the driver struct, reads config file and connects to cluster
-func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, rootBase, config string, useGoCeph bool) cephRBDVolumeDriver {
+func newCephRBDVolumeDriver(pluginName, cluster, userName, defaultPoolName, rootBase, config string) cephRBDVolumeDriver {
 	// the root mount dir will be based on docker default root and plugin name - pool added later per volume
 	mountDir := filepath.Join(rootBase, pluginName)
 	log.Printf("INFO: newCephRBDVolumeDriver: setting base mount dir=%s", mountDir)
 
 	// fill everything except the connection and context
 	driver := cephRBDVolumeDriver{
-		name:      pluginName,
-		cluster:   cluster,
-		user:      userName,
-		pool:      defaultPoolName,
-		root:      mountDir,
-		config:    config,
-		volumes:   map[string]*Volume{},
-		m:         &sync.Mutex{},
-		useGoCeph: useGoCeph,
+		name:    pluginName,
+		cluster: cluster,
+		user:    userName,
+		pool:    defaultPoolName,
+		root:    mountDir,
+		config:  config,
+		volumes: map[string]*Volume{},
+		m:       &sync.Mutex{},
 	}
 
 	return driver
 }
 
+// ************************************************************
+//
+// Implement the Docker Volume Driver interface
+//
+// Using https://github.com/docker/go-plugins-helpers/
+//
+// ************************************************************
+
 // Capabilities
-// Scope: global - images managed using this plugin can be considered "global"
-// TODO: make configurable
-func (d cephRBDVolumeDriver) Capabilities(r dkvolume.Request) dkvolume.Response {
-	return dkvolume.Response{
-		Capabilities: dkvolume.Capability{
+// Scope: global - images managed using rbd plugin can be considered "global"
+func (d cephRBDVolumeDriver) Capabilities() *volume.CapabilitiesResponse {
+	return &volume.CapabilitiesResponse{
+		Capabilities: volume.Capability{
 			Scope: "global",
 		},
 	}
 }
 
-// ************************************************************
-//
-// Implement the Docker VolumeDriver API via dkvolume interface
-//
-// Using https://github.com/docker/go-plugins-helpers/tree/master/volume
-//
-// ************************************************************
-
 // Create will ensure the RBD image requested is available.  Plugin requires
-// --create option to provision new RBD images.
+// --create option flag to be able to provision new RBD images.
 //
 // Docker Volume Create Options:
 //   size   - in MB
@@ -173,7 +141,7 @@ func (d cephRBDVolumeDriver) Capabilities(r dkvolume.Request) dkvolume.Response 
 //    { "Err": null }
 //    Respond with a string error if an error occurred.
 //
-func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
+func (d cephRBDVolumeDriver) Create(r *volume.CreateRequest) error {
 	log.Printf("INFO: API Create(%q)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -181,7 +149,7 @@ func (d cephRBDVolumeDriver) Create(r dkvolume.Request) dkvolume.Response {
 	return d.createImage(r)
 }
 
-func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
+func (d cephRBDVolumeDriver) createImage(r *volume.CreateRequest) error {
 	log.Printf("INFO: createImage(%q)", r)
 
 	fstype := *defaultImageFSType
@@ -190,7 +158,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 	pool, name, size, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return err
 	}
 
 	// Options to override from `docker volume create -o OPT=VAL ...`
@@ -214,40 +182,30 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 	// do we already know about this volume? return early
 	if _, found := d.volumes[mount]; found {
 		log.Println("INFO: Volume is already in known mounts: " + mount)
-		return dkvolume.Response{}
-	}
-
-	// otherwise, connect to Ceph and check ceph rbd api for it
-	if d.useGoCeph {
-		err = d.connect(pool)
-		if err != nil {
-			log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
-			return dkvolume.Response{Err: err.Error()}
-		}
-		defer d.shutdown()
+		return nil
 	}
 
 	exists, err := d.rbdImageExists(pool, name)
 	if err != nil {
 		log.Printf("ERROR: checking for RBD Image: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return err
 	}
 	if !exists {
 		if !*canCreateVolumes {
 			errString := fmt.Sprintf("Ceph RBD Image not found: %s", name)
 			log.Println("ERROR: " + errString)
-			return dkvolume.Response{Err: errString}
+			return errors.New(errString)
 		}
 		// try to create it ... use size and default fs-type
 		err = d.createRBDImage(pool, name, size, fstype)
 		if err != nil {
 			errString := fmt.Sprintf("Unable to create Ceph RBD Image(%s): %s", name, err)
 			log.Println("ERROR: " + errString)
-			return dkvolume.Response{Err: errString}
+			return errors.New(errString)
 		}
 	}
 
-	return dkvolume.Response{}
+	return nil
 }
 
 // POST /VolumeDriver.Remove
@@ -260,7 +218,7 @@ func (d cephRBDVolumeDriver) createImage(r dkvolume.Request) dkvolume.Response {
 //    { "Err": null }
 //    Respond with a string error if an error occurred.
 //
-func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
+func (d cephRBDVolumeDriver) Remove(r *volume.RemoveRequest) error {
 	log.Printf("INFO: API Remove(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -269,7 +227,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return err
 	}
 
 	mount := d.mountpoint(pool, name)
@@ -279,25 +237,15 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 		log.Printf("WARN: Volume is not in known mounts: %s", mount)
 	}
 
-	// connect to Ceph and check ceph rbd api for it
-	if d.useGoCeph {
-		err = d.connect(pool)
-		if err != nil {
-			log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
-			return dkvolume.Response{Err: err.Error()}
-		}
-		defer d.shutdown()
-	}
-
 	exists, err := d.rbdImageExists(pool, name)
 	if err != nil {
 		log.Printf("ERROR: checking for RBD Image: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return err
 	}
 	if !exists {
 		errString := fmt.Sprintf("Ceph RBD Image not found: %s", name)
 		log.Println("ERROR: " + errString)
-		return dkvolume.Response{Err: errString}
+		return errors.New(errString)
 	}
 
 	// attempt to gain lock before remove - lock seems to disappear after rm (but not after rename)
@@ -305,7 +253,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 	if err != nil {
 		errString := fmt.Sprintf("Unable to lock image for remove: %s", name)
 		log.Println("ERROR: " + errString)
-		return dkvolume.Response{Err: errString}
+		return errors.New(errString)
 	}
 
 	// remove action can be: ignore, delete or rename
@@ -316,18 +264,19 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 			errString := fmt.Sprintf("Unable to remove Ceph RBD Image(%s): %s", name, err)
 			log.Println("ERROR: " + errString)
 			defer d.unlockImage(pool, name, locker)
-			return dkvolume.Response{Err: errString}
+			return errors.New(errString)
 		}
 		defer d.unlockImage(pool, name, locker)
 	} else if removeActionFlag == "rename" {
 		// just rename it (in case needed later, or can be culled via script)
+		// TODO: maybe add a timestamp?
 		err = d.renameRBDImage(pool, name, "zz_"+name)
 		if err != nil {
 			errString := fmt.Sprintf("Unable to rename with zz_ prefix: RBD Image(%s): %s", name, err)
 			log.Println("ERROR: " + errString)
 			// unlock by old name
 			defer d.unlockImage(pool, name, locker)
-			return dkvolume.Response{Err: errString}
+			return errors.New(errString)
 		}
 		// unlock by new name
 		defer d.unlockImage(pool, "zz_"+name, locker)
@@ -337,7 +286,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 	}
 
 	delete(d.volumes, mount)
-	return dkvolume.Response{}
+	return nil
 }
 
 // Mount will Ceph Map the RBD image to the local kernel and create a mount
@@ -356,7 +305,7 @@ func (d cephRBDVolumeDriver) Remove(r dkvolume.Request) dkvolume.Response {
 //    made available, and/or a string error if an error occurred.
 //
 // TODO: utilize the new MountRequest.ID field to track volumes
-func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
+func (d cephRBDVolumeDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
 	log.Printf("INFO: API Mount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -365,24 +314,16 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return nil, err
 	}
 
 	mount := d.mountpoint(pool, name)
-
-	// FIXME: this is failing - see error below - for now we just attempt to grab a lock
-	// check that the image is not locked already
-	//locked, err := d.rbdImageIsLocked(name)
-	//if locked || err != nil {
-	//	log.Printf("ERROR: checking for RBD Image(%s) lock: %s", name, err)
-	//	return dkvolume.Response{Err: "RBD Image locked"}
-	//}
 
 	// attempt to lock
 	locker, err := d.lockImage(pool, name)
 	if err != nil {
 		log.Printf("ERROR: locking RBD Image(%s): %s", name, err)
-		return dkvolume.Response{Err: "Unable to get Exclusive Lock"}
+		return nil, errors.New("Unable to get Exclusive Lock")
 	}
 
 	// map and mount the RBD image -- these are OS level commands, not avail in go-ceph
@@ -393,7 +334,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 		log.Printf("ERROR: mapping RBD Image(%s) to kernel device: %s", name, err)
 		// failsafe: need to release lock
 		defer d.unlockImage(pool, name, locker)
-		return dkvolume.Response{Err: "Unable to map"}
+		return nil, errors.New("Unable to map kernel device")
 	}
 
 	// determine device FS type
@@ -411,7 +352,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 		// failsafe: need to release lock and unmap kernel device
 		defer d.unmapImageDevice(device)
 		defer d.unlockImage(pool, name, locker)
-		return dkvolume.Response{Err: "Image filesystem has errors, requires manual repairs"}
+		return nil, errors.New("Image filesystem has errors, requires manual repairs")
 	}
 
 	// check for mountdir - create if necessary
@@ -421,7 +362,7 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 		// failsafe: need to release lock and unmap kernel device
 		defer d.unmapImageDevice(device)
 		defer d.unlockImage(pool, name, locker)
-		return dkvolume.Response{Err: "Unable to make mountdir"}
+		return nil, errors.New("Unable to make mountdir")
 	}
 
 	// mount
@@ -431,19 +372,20 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 		// need to release lock and unmap kernel device
 		defer d.unmapImageDevice(device)
 		defer d.unlockImage(pool, name, locker)
-		return dkvolume.Response{Err: "Unable to mount device"}
+		return nil, errors.New("Unable to mount device")
 	}
 
 	// if all that was successful - add to our list of volumes
 	d.volumes[mount] = &Volume{
-		name:   name,
-		device: device,
-		locker: locker,
-		fstype: fstype,
-		pool:   pool,
+		Name:   name,
+		Device: device,
+		Locker: locker,
+		FStype: fstype,
+		Pool:   pool,
+		ID:     r.ID,
 	}
 
-	return dkvolume.Response{Mountpoint: mount}
+	return &volume.MountResponse{Mountpoint: mount}, nil
 }
 
 // Get the list of volumes registered with the plugin.
@@ -460,60 +402,74 @@ func (d cephRBDVolumeDriver) Mount(r dkvolume.MountRequest) dkvolume.Response {
 //    respective paths on the host filesystem (where the volumes have been
 //    made available).
 //
-func (d cephRBDVolumeDriver) List(r dkvolume.Request) dkvolume.Response {
-	vols := make([]*dkvolume.Volume, 0, len(d.volumes))
-	// for each registered mountpoint
-	for k, v := range d.volumes {
-		// append it and its name to the result
-		vols = append(vols, &dkvolume.Volume{
-			Name:       v.name,
-			Mountpoint: k,
-		})
+func (d cephRBDVolumeDriver) List() (*volume.ListResponse, error) {
+	volNames, err := d.rbdList()
+	if err != nil {
+		return nil, err
+	}
+	vols := make([]*volume.Volume, 0, len(volNames))
+	for _, name := range volNames {
+		apiVol := &volume.Volume{Name: name}
+
+		// for each registered vol, add Mountpoint
+		mounted, ok := d.volumes[name]
+		if ok {
+			apiVol.Mountpoint = d.mountpoint(mounted.Pool, mounted.Name)
+		}
+
+		vols = append(vols, apiVol)
 	}
 
 	log.Printf("INFO: List request => %s", vols)
-	return dkvolume.Response{Volumes: vols}
+	return &volume.ListResponse{Volumes: vols}, nil
+}
+
+// rbdList performs an `rbd ls` on the default pool
+func (d *cephRBDVolumeDriver) rbdList() ([]string, error) {
+	result, err := d.rbdsh(d.pool, "ls")
+	if err != nil {
+		return nil, err
+	}
+	// split into lines - should be one rbd image name per line
+	return strings.Split(result, "\n"), nil
 }
 
 // Get the volume info.
 //
 // POST /VolumeDriver.Get
 //
-// Request:
+// GetRequest:
 //    { "Name": "volume_name" }
 //    Docker needs reminding of the path to the volume on the host.
 //
-// Response:
-//    { "Volume": { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" }, "Err": null }
-//    Respond with a tuple containing the name of the queried volume and the
-//    path on the host filesystem where the volume has been made available,
-//    and/or a string error if an error occurred.
+// GetResponse:
+//    { "Volume": { "Name": "volume_name", "Mountpoint": "/path/to/directory/on/host" }}
 //
-func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
+func (d cephRBDVolumeDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 	// parse full image name for optional/default pieces
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return nil, err
 	}
 
 	// Check to see if the image exists
 	exists, err := d.rbdImageExists(pool, name)
 	if err != nil {
 		log.Printf("WARN: checking for RBD Image: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return nil, err
 	}
 	mountPath := d.mountpoint(pool, name)
 	if !exists {
 		log.Printf("WARN: Image %s does not exist", r.Name)
 		delete(d.volumes, mountPath)
-		return dkvolume.Response{Err: fmt.Sprintf("Image %s does not exist", r.Name)}
+		return nil, fmt.Errorf("Image %s does not exist", r.Name)
 	}
 	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
 
 	// TODO: what to do if the mountpoint registry (d.volumes) has a different name?
 
-	return dkvolume.Response{Volume: &dkvolume.Volume{Name: r.Name, Mountpoint: mountPath}}
+	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: mountPath}}, nil
 }
 
 // Path returns the path to host directory mountpoint for volume.
@@ -531,17 +487,17 @@ func (d cephRBDVolumeDriver) Get(r dkvolume.Request) dkvolume.Response {
 //
 // NOTE: this method does not require the Ceph connection
 //
-func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
+func (d cephRBDVolumeDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	// parse full image name for optional/default pieces
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return nil, err
 	}
 
 	mountPath := d.mountpoint(pool, name)
 	log.Printf("INFO: API Path request(%s) => %s", name, mountPath)
-	return dkvolume.Response{Mountpoint: mountPath}
+	return &volume.PathResponse{Mountpoint: mountPath}, nil
 }
 
 // POST /VolumeDriver.Unmount
@@ -549,22 +505,15 @@ func (d cephRBDVolumeDriver) Path(r dkvolume.Request) dkvolume.Response {
 // - assuming writes are finished and no other containers using same disk on this host?
 
 // Request:
-//    { "Name": "volume_name" }
+//    { "Name": "volume_name", ID: "client-id" }
 //    Indication that Docker no longer is using the named volume. This is
 //    called once per container stop. Plugin may deduce that it is safe to
 //    deprovision it at this point.
 //
 // Response:
-//    { "Err": null }
-//    Respond with a string error if an error occurred.
+//    Respond with error or nil
 //
-// FIXME: TODO: we are getting an Unmount call from docker daemon after a
-// failed Mount (e.g. device locked), which causes the device to be
-// unmounted/unmapped/unlocked while possibly in use by another container --
-// revisit the API, are we doing something wrong or perhaps we can fail sooner
-//
-// TODO: utilize the new UnmountRequest.ID field to track volumes
-func (d cephRBDVolumeDriver) Unmount(r dkvolume.UnmountRequest) dkvolume.Response {
+func (d cephRBDVolumeDriver) Unmount(r *volume.UnmountRequest) error {
 	log.Printf("INFO: API Unmount(%s)", r)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -575,63 +524,66 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.UnmountRequest) dkvolume.Respons
 	pool, name, _, err := d.parseImagePoolNameSize(r.Name)
 	if err != nil {
 		log.Printf("ERROR: parsing volume: %s", err)
-		return dkvolume.Response{Err: err.Error()}
+		return err
 	}
 
 	mount := d.mountpoint(pool, name)
 
-	// connect to Ceph so we can manipulate RBD Image
-	if d.useGoCeph {
-		err = d.connect(pool)
-		if err != nil {
-			log.Printf("ERROR: unable to connect to ceph and access pool: %s", err)
-			return dkvolume.Response{Err: err.Error()}
-		}
-		defer d.shutdown()
-	}
-
 	// check if it's in our mounts - we may not know about it if plugin was started late?
 	vol, found := d.volumes[mount]
 	if !found {
-		log.Printf("WARN: Volume is not in known mounts: will attempt limited Unmount: %s/%s", pool, name)
+		// FIXME: is this an error or just a log and a return nil?
+		//return fmt.Errorf("WARN: Volume is not in known mounts: ignoring request to unmount: %s/%s", pool, name)
+		log.Printf("WARN: Volume is not in known mounts: ignoring request to unmount: %s/%s", pool, name)
+		return nil
+		/**
 		// set up a fake Volume with defaults ...
 		// - device is /dev/rbd/<pool>/<image> in newer ceph versions
 		// - assume we are the locker (will fail if locked from another host)
 		vol = &Volume{
-			pool:   pool,
-			name:   name,
-			device: fmt.Sprintf("/dev/rbd/%s/%s", pool, name),
-			locker: d.localLockerCookie(),
+			Pool:   pool,
+			Name:   name,
+			Device: fmt.Sprintf("/dev/rbd/%s/%s", pool, name),
+			Locker: d.localLockerCookie(),
+			ID, r.ID,
 		}
+		*/
+	}
+
+	// if found - double check ID
+	if vol.ID != r.ID {
+		log.Printf("WARN: Volume client ID(%s) does not match requestor id(%s) for %s/%s",
+			vol.ID, r.ID, pool, name)
+		return nil
 	}
 
 	// unmount
 	// NOTE: this might succeed even if device is still in use inside container. device will dissappear from host side but still be usable inside container :(
-	err = d.unmountDevice(vol.device)
+	err = d.unmountDevice(vol.Device)
 	if err != nil {
-		log.Printf("ERROR: unmounting device(%s): %s", vol.device, err)
+		log.Printf("ERROR: unmounting device(%s): %s", vol.Device, err)
 		// failsafe: will still attempt to unmap and unlock
 		err_msgs = append(err_msgs, "Error unmounting device")
 	}
 
 	// unmap
-	err = d.unmapImageDevice(vol.device)
+	err = d.unmapImageDevice(vol.Device)
 	if err != nil {
-		log.Printf("ERROR: unmapping image device(%s): %s", vol.device, err)
+		log.Printf("ERROR: unmapping image device(%s): %s", vol.Device, err)
 		// NOTE: rbd unmap exits 16 if device is still being used - unlike umount.  try to recover differently in that case
 		if rbdUnmapBusyRegexp.MatchString(err.Error()) {
 			// can't always re-mount and not sure if we should here ... will be cleaned up once original container goes away
 			log.Printf("WARN: unmap failed due to busy device, early exit from this Unmount request.")
-			return dkvolume.Response{Err: err.Error()}
+			return err
 		}
 		// other error, failsafe: proceed to attempt to unlock
 		err_msgs = append(err_msgs, "Error unmapping kernel device")
 	}
 
 	// unlock
-	err = d.unlockImage(vol.pool, vol.name, vol.locker)
+	err = d.unlockImage(vol.Pool, vol.Name, vol.Locker)
 	if err != nil {
-		log.Printf("ERROR: unlocking RBD image(%s): %s", vol.name, err)
+		log.Printf("ERROR: unlocking RBD image(%s): %s", vol.Name, err)
 		err_msgs = append(err_msgs, "Error unlocking image")
 	}
 
@@ -640,79 +592,18 @@ func (d cephRBDVolumeDriver) Unmount(r dkvolume.UnmountRequest) dkvolume.Respons
 
 	// check for piled up errors
 	if len(err_msgs) > 0 {
-		return dkvolume.Response{Err: strings.Join(err_msgs, ", ")}
+		return errors.New(strings.Join(err_msgs, ", "))
 	}
-
-	return dkvolume.Response{}
-}
-
-// END Docker VolumeDriver Plugin API methods
-// ***************************************************************************
-
-// shutdown and connect are used when d.useGoCeph == true
-
-// shutdown closes the connection - maybe not needed unless we recreate conn?
-// more info:
-// - https://github.com/ceph/go-ceph/blob/f251b53/rados/ioctx.go#L140
-// - http://ceph.com/docs/master/rados/api/librados/
-func (d *cephRBDVolumeDriver) shutdown() {
-	log.Println("INFO: Ceph RBD Driver shutdown() called")
-	if d.ioctx != nil {
-		d.ioctx.Destroy()
-	}
-	if d.conn != nil {
-		d.conn.Shutdown()
-	}
-}
-
-// connect builds up the ceph conn and default pool
-func (d *cephRBDVolumeDriver) connect(pool string) error {
-	log.Printf("INFO: connect() to Ceph via go-ceph, with pool: %s", pool)
-
-	// create the go-ceph Client Connection
-	var cephConn *rados.Conn
-	var err error
-	if d.cluster == "" {
-		cephConn, err = rados.NewConnWithUser(d.user)
-	} else {
-		// FIXME: TODO: can't seem to use a cluster name -- get error -22 from noahdesu/go-ceph/rados:
-		// panic: Unable to create ceph connection to cluster=ceph with user=admin: rados: ret=-22
-		cephConn, err = rados.NewConnWithClusterAndUser(d.cluster, d.user)
-	}
-	if err != nil {
-		log.Printf("ERROR: Unable to create ceph connection to cluster=%s with user=%s: %s", d.cluster, d.user, err)
-		return err
-	}
-
-	// read ceph.conf and setup connection
-	if d.config == "" {
-		err = cephConn.ReadDefaultConfigFile()
-	} else {
-		err = cephConn.ReadConfigFile(d.config)
-	}
-	if err != nil {
-		log.Printf("ERROR: Unable to read ceph config: %s", err)
-		return err
-	}
-
-	err = cephConn.Connect()
-	if err != nil {
-		log.Printf("ERROR: Unable to connect to Ceph: %s", err)
-		return err
-	}
-
-	// can now set conn in driver
-	d.conn = cephConn
-
-	// setup the requested pool context
-	ioctx, err := d.goceph_openContext(pool)
-	if err != nil {
-		return err
-	}
-	d.ioctx = ioctx
 
 	return nil
 }
+
+//
+// END Docker VolumeDriver Plugin API methods
+//
+// ***************************************************************************
+// ***************************************************************************
+//
 
 // mountpoint returns the expected path on host
 func (d *cephRBDVolumeDriver) mountpoint(pool, name string) string {
@@ -773,14 +664,6 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (pool stri
 
 // rbdImageExists will check for an existing Ceph RBD Image
 func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error) {
-	if d.useGoCeph {
-		return d.goceph_rbdImageExists(pool, findName)
-	}
-	return d.sh_rbdImageExists(pool, findName)
-}
-
-// sh_rbdImageExists uses rbd info to check for ceph rbd image
-func (d *cephRBDVolumeDriver) sh_rbdImageExists(pool, findName string) (bool, error) {
 	_, err := d.rbdsh(pool, "info", findName)
 	if err != nil {
 		// NOTE: even though method signature returns err - we take the error
@@ -791,58 +674,8 @@ func (d *cephRBDVolumeDriver) sh_rbdImageExists(pool, findName string) (bool, er
 	return true, nil
 }
 
-func (d *cephRBDVolumeDriver) goceph_rbdImageExists(pool, findName string) (bool, error) {
-	log.Printf("INFO: checking if rbdImageExists(%s/%s)", pool, findName)
-	if findName == "" {
-		return false, fmt.Errorf("Empty Ceph RBD Image name")
-	}
-
-	ctx, err := d.goceph_openContext(pool)
-	if err != nil {
-		return false, err
-	}
-	defer d.goceph_shutdownContext(ctx)
-
-	img := rbd.GetImage(ctx, findName)
-	err = img.Open(true)
-	defer img.Close()
-	if err != nil {
-		if err == rbd.RbdErrorNotFound {
-			log.Printf("INFO: Ceph RBD Image ('%s') not found: %s", findName, err)
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-// goceph_shutdownContext will destroy any non-default ioctx
-func (d *cephRBDVolumeDriver) goceph_shutdownContext(ioctx *rados.IOContext) {
-	if ioctx != nil {
-		ioctx.Destroy()
-	}
-}
-
-// goceph_openContext provides access to a specific Ceph Pool
-func (d *cephRBDVolumeDriver) goceph_openContext(pool string) (*rados.IOContext, error) {
-	// setup the requested pool context
-	ioctx, err := d.conn.OpenIOContext(pool)
-	if err != nil {
-		// TODO: make sure we aren't hiding a useful error struct by casting to string?
-		msg := fmt.Sprintf("Unable to open context(%s): %s", pool, err)
-		log.Printf("ERROR: " + msg)
-		return ioctx, errors.New(msg)
-	}
-	return ioctx, nil
-}
-
 // createRBDImage will create a new Ceph block device and make a filesystem on it
 func (d *cephRBDVolumeDriver) createRBDImage(pool string, name string, size int, fstype string) error {
-	// NOTE: there is no goceph_ version of this func - but parts of sh version do (lock/unlock)
-	return d.sh_createRBDImage(pool, name, size, fstype)
-}
-
-func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size int, fstype string) error {
 	log.Printf("INFO: Attempting to create new RBD Image: (%s/%s, %s, %s)", pool, name, size, fstype)
 
 	// check that fs is valid type (needs mkfs.fstype in PATH)
@@ -852,14 +685,13 @@ func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size i
 		return errors.New(msg)
 	}
 
-	// TODO: create a go-ceph Create(..) func for this?
-
-	// create the block device image with format=2 (v2)
+	// create the block device image with format=2 (v2) - features seem heavily dependent on version and configuration of RBD pools
 	//  should we enable all v2 image features?: +1: layering support +2: striping v2 support +4: exclusive locking support +8: object map support
 	// NOTE: i tried but "2015-08-02 20:24:36.726758 7f87787907e0 -1 librbd: librbd does not support requested features."
 	// NOTE: I also tried just image-features=4 (locking) - but map will fail:
 	//       sudo rbd unmap mynewvol =>  rbd: 'mynewvol' is not a block device, rbd: unmap failed: (22) Invalid argument
 	//	"--image-features", strconv.Itoa(4),
+
 	_, err = d.rbdsh(
 		pool, "create",
 		"--image-format", strconv.Itoa(2),
@@ -873,7 +705,6 @@ func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size i
 	// lock it temporarily for fs creation
 	lockname, err := d.lockImage(pool, name)
 	if err != nil {
-		// TODO: defer image delete?
 		return err
 	}
 
@@ -892,7 +723,8 @@ func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size i
 		return err
 	}
 
-	// TODO: should we chown/chmod the directory? e.g. non-root container users won't be able to write
+	// TODO: should we chown/chmod the directory? e.g. non-root container users
+	// won't be able to write. where to get the preferred user id?
 
 	// unmap
 	err = d.unmapImageDevice(device)
@@ -912,13 +744,6 @@ func (d *cephRBDVolumeDriver) sh_createRBDImage(pool string, name string, size i
 
 // rbdImageIsLocked returns true if named image is already locked
 func (d *cephRBDVolumeDriver) rbdImageIsLocked(pool, name string) (bool, error) {
-	if d.useGoCeph {
-		return d.goceph_rbdImageIsLocked(pool, name)
-	}
-	return d.sh_rbdImageIsLocked(pool, name)
-}
-
-func (d *cephRBDVolumeDriver) sh_rbdImageIsLocked(pool, name string) (bool, error) {
 	// check the output for a lock -- if blank or error, assume not locked (?)
 	out, err := d.rbdsh(pool, "lock", "ls", name)
 	if err != nil || out != "" {
@@ -928,80 +753,14 @@ func (d *cephRBDVolumeDriver) sh_rbdImageIsLocked(pool, name string) (bool, erro
 	return true, nil
 }
 
-// FIXME: getting panics when trying to run below go-ceph code, at ListLockers():
-//
-// see https://github.com/yp-engineering/rbd-docker-plugin/issues/3
-//
-func (d *cephRBDVolumeDriver) goceph_rbdImageIsLocked(pool, name string) (bool, error) {
-	if pool == "" || name == "" {
-		return true, errors.New("rbdImageIsLocked: pool and name required")
-	}
-
-	// make the image struct
-	rbdImage := rbd.GetImage(d.ioctx, name)
-
-	// open it (read-only)
-	err := rbdImage.Open(true)
-	if err != nil {
-		log.Printf("ERROR: opening rbd image(%s): %s", name, err)
-		return true, err
-	}
-	defer rbdImage.Close()
-
-	// check for locks -- for our purposes, with even one lock we consider image locked
-	//lockers := []rbd.Locker{}
-	//lockers := make([]rbd.Locker, 10)
-	tag, lockers, err := rbdImage.ListLockers()
-	if err != nil {
-		log.Printf("ERROR: retrieving Lockers list for Image(%s): %s", name, err)
-		return true, err
-	}
-	if len(lockers) > 0 {
-		log.Printf("WARN: RBD Image is locked: tag=%s, lockers=%q", tag, lockers)
-		return true, nil
-	}
-
-	return false, nil
-}
-
 // lockImage locks image and returns locker cookie name
 func (d *cephRBDVolumeDriver) lockImage(pool, imagename string) (string, error) {
-	if d.useGoCeph {
-		return d.goceph_lockImage(pool, imagename)
-	}
-	return d.sh_lockImage(pool, imagename)
-}
-
-func (d *cephRBDVolumeDriver) sh_lockImage(pool, imagename string) (string, error) {
 	cookie := d.localLockerCookie()
 	_, err := d.rbdsh(pool, "lock", "add", imagename, cookie)
 	if err != nil {
 		return "", err
 	}
 	return cookie, nil
-}
-
-func (d *cephRBDVolumeDriver) goceph_lockImage(pool, imagename string) (string, error) {
-	log.Printf("INFO: lockImage(%s/%s)", pool, imagename)
-
-	// build image struct
-	rbdImage := rbd.GetImage(d.ioctx, imagename)
-
-	// open it (read-only)
-	err := rbdImage.Open(true)
-	if err != nil {
-		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
-		return "", err
-	}
-	defer rbdImage.Close()
-
-	// lock it using hostname
-	locker := d.localLockerCookie()
-	err = rbdImage.LockExclusive(locker)
-	if err != nil {
-		return locker, err
-	}
-	return locker, nil
 }
 
 // localLockerCookie returns the Hostname
@@ -1023,13 +782,6 @@ func (d *cephRBDVolumeDriver) unlockImage(pool, imagename, locker string) error 
 	}
 	log.Printf("INFO: unlockImage(%s/%s, %s)", pool, imagename, locker)
 
-	if d.useGoCeph {
-		return d.goceph_unlockImage(pool, imagename, locker)
-	}
-	return d.sh_unlockImage(pool, imagename, locker)
-}
-
-func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) error {
 	// first - we need to discover the client id of the locker -- so we have to
 	// `rbd lock list` and grep out fields
 	out, err := d.rbdsh(pool, "lock", "list", imagename)
@@ -1063,33 +815,10 @@ func (d *cephRBDVolumeDriver) sh_unlockImage(pool, imagename, locker string) err
 	return nil
 }
 
-func (d *cephRBDVolumeDriver) goceph_unlockImage(pool, imagename, locker string) error {
-	// build image struct
-	rbdImage := rbd.GetImage(d.ioctx, imagename)
-
-	// open it (read-only)
-	//err := rbdImage.Open(true)
-	err := rbdImage.Open()
-	if err != nil {
-		log.Printf("ERROR: opening rbd image(%s): %s", imagename, err)
-		return err
-	}
-	defer rbdImage.Close()
-	return rbdImage.Unlock(locker)
-}
-
 // removeRBDImage will remove a Ceph RBD image - no undo available
 func (d *cephRBDVolumeDriver) removeRBDImage(pool, name string) error {
 	log.Println("INFO: Remove RBD Image(%s/%s)", pool, name)
 
-	if d.useGoCeph {
-		return d.goceph_removeRBDImage(pool, name)
-	}
-	return d.sh_removeRBDImage(pool, name)
-}
-
-// sh_removeRBDImage will remove a Ceph RBD image - no undo available
-func (d *cephRBDVolumeDriver) sh_removeRBDImage(pool, name string) error {
 	// remove the block device image
 	_, err := d.rbdsh(pool, "rm", name)
 
@@ -1099,26 +828,8 @@ func (d *cephRBDVolumeDriver) sh_removeRBDImage(pool, name string) error {
 	return nil
 }
 
-func (d *cephRBDVolumeDriver) goceph_removeRBDImage(pool, name string) error {
-	// build image struct
-	rbdImage := rbd.GetImage(d.ioctx, name)
-
-	// remove the block device image
-	return rbdImage.Remove()
-}
-
 // renameRBDImage will move a Ceph RBD image to new name
 func (d *cephRBDVolumeDriver) renameRBDImage(pool, name, newname string) error {
-	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
-
-	if d.useGoCeph {
-		return d.goceph_renameRBDImage(pool, name, newname)
-	}
-	return d.sh_renameRBDImage(pool, name, newname)
-}
-
-// sh_renameRBDImage will move a Ceph RBD image to new name
-func (d *cephRBDVolumeDriver) sh_renameRBDImage(pool, name, newname string) error {
 	log.Println("INFO: Rename RBD Image(%s/%s -> %s)", pool, name, newname)
 
 	out, err := d.rbdsh(pool, "rename", name, newname)
@@ -1128,21 +839,6 @@ func (d *cephRBDVolumeDriver) sh_renameRBDImage(pool, name, newname string) erro
 	}
 	return nil
 }
-
-func (d *cephRBDVolumeDriver) goceph_renameRBDImage(pool, name, newname string) error {
-	// build image struct
-	rbdImage := rbd.GetImage(d.ioctx, name)
-
-	// rename the block device image
-	return rbdImage.Rename(newname)
-}
-
-//
-// NOTE: the following are Shell commands for low level kernel RBD or Device
-// operations - there are no go-ceph lib alternatives
-//
-
-// RBD subcommands
 
 // mapImage will map the RBD Image to a kernel device
 func (d *cephRBDVolumeDriver) mapImage(pool, imagename string) (string, error) {

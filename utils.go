@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"os/user"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +15,21 @@ import (
 var (
 	defaultShellTimeout = 2 * 60 * time.Second
 )
+
+// returns current user gid or 0
+func currentGid() int {
+	gid := 0
+	current, err := user.Current()
+	if err != nil {
+		return 0
+	}
+	gid, err = strconv.Atoi(current.Gid)
+	if err != nil {
+		return 0
+	}
+
+	return gid
+}
 
 // sh is a simple os.exec Command tool, returns trimmed string output
 func sh(name string, args ...string) (string, error) {
