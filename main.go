@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	dkvolume "github.com/docker/go-plugins-helpers/volume"
+	"github.com/docker/go-plugins-helpers/volume"
 )
 
 var (
@@ -30,12 +30,11 @@ var (
 	cephCluster        = flag.String("cluster", "", "Ceph cluster")                          // less likely to run multiple clusters on same hardware
 	defaultCephPool    = flag.String("pool", "rbd", "Default Ceph Pool for RBD operations")
 	pluginDir          = flag.String("plugins", "/run/docker/plugins", "Docker plugin directory for socket")
-	rootMountDir       = flag.String("mount", dkvolume.DefaultDockerRootDirectory, "Mount directory for volumes on host")
+	rootMountDir       = flag.String("mount", volume.DefaultDockerRootDirectory, "Mount directory for volumes on host")
 	logDir             = flag.String("logdir", "/var/log", "Logfile directory")
 	canCreateVolumes   = flag.Bool("create", false, "Can auto Create RBD Images")
 	defaultImageSizeMB = flag.Int("size", 20*1024, "RBD Image size to Create (in MB) (default: 20480=20GB)")
 	defaultImageFSType = flag.String("fs", "xfs", "FS type for the created RBD Image (must have mkfs.type)")
-	useGoCeph          = flag.Bool("go-ceph", false, "Use go-ceph library (default: false)")
 )
 
 // setup a validating flag for remove action
@@ -90,16 +89,15 @@ func main() {
 	defer shutdownLogging(logFile)
 
 	log.Printf("INFO: starting rbd-docker-plugin version %s", VERSION)
-	log.Printf("INFO: canCreateVolumes=%q, removeAction=%q", *canCreateVolumes, removeActionFlag)
+	log.Printf("INFO: canCreateVolumes=%v, removeAction=%q", *canCreateVolumes, removeActionFlag)
 	log.Printf(
-		"INFO: Setting up Ceph Driver for PluginID=%s, cluster=%s, user=%s, pool=%s, mount=%s, config=%s, go-ceph=%s",
+		"INFO: Setting up Ceph Driver for PluginID=%s, cluster=%s, ceph-user=%s, pool=%s, mount=%s, config=%s",
 		*pluginName,
 		*cephCluster,
 		*cephUser,
 		*defaultCephPool,
 		*rootMountDir,
 		*cephConfigFile,
-		*useGoCeph,
 	)
 
 	// double check for config file - required especially for non-standard configs
@@ -118,14 +116,10 @@ func main() {
 		*defaultCephPool,
 		*rootMountDir,
 		*cephConfigFile,
-		*useGoCeph,
 	)
-	if *useGoCeph {
-		defer d.shutdown()
-	}
 
 	log.Println("INFO: Creating Docker VolumeDriver Handler")
-	h := dkvolume.NewHandler(d)
+	h := volume.NewHandler(d)
 
 	socket := socketPath()
 	log.Printf("INFO: Opening Socket for Docker to connect: %s", socket)
@@ -145,18 +139,14 @@ func main() {
 			switch sig {
 			case syscall.SIGTERM, syscall.SIGKILL:
 				log.Printf("INFO: received TERM or KILL signal: %s", sig)
-				// close up conn and logs
-				if *useGoCeph {
-					d.shutdown()
-				}
 				shutdownLogging(logFile)
 				os.Exit(0)
 			}
 		}
 	}()
 
-	// NOTE: pass empty string for group to skip broken chgrp in dkvolume lib
-	err = h.ServeUnix("", socket)
+	// open socket
+	err = h.ServeUnix(socket, currentGid())
 
 	if err != nil {
 		log.Printf("ERROR: Unable to create UNIX socket: %v", err)
