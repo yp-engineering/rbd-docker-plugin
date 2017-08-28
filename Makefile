@@ -1,7 +1,7 @@
 # building the rbd docker plugin golang binary with version
 # makefile mostly used for packing a tpkg
 
-.PHONY: all build install clean test version setup systemd
+.PHONY: all build install clean test version setup systemd dep-tool
 
 IMAGE_PATH=ypengineering/rbd-docker-plugin
 TAG?=latest
@@ -11,7 +11,8 @@ SUDO?=
 
 TMPDIR?=/tmp
 INSTALL?=install
-TPKG_VERSION=$(VERSION)-2
+#TPKG_VERSION=$(VERSION)-2
+TPKG_VERSION=$(VERSION)
 
 
 BINARY=rbd-docker-plugin
@@ -37,13 +38,19 @@ BIN_FILES=dist/$(BINARY) check-ceph-rbd-docker-plugin.sh
 # in the container.
 all: build
 
+dep-tool:
+	go get -u github.com/golang/dep/cmd/dep
+
+vendor: dep-tool
+	dep ensure
+
 # set VERSION from version.go, eval into Makefile for inclusion into tpkg.yml
 version: version.go
 	$(eval VERSION := $(shell grep "VERSION" version.go | cut -f2 -d'"'))
 
 build: dist/$(BINARY)
 
-dist/$(BINARY): $(PKG_SRC)
+dist/$(BINARY): $(PKG_SRC) vendor
 	go build -v -x -o dist/$(BINARY) .
 
 install: build test
@@ -52,12 +59,13 @@ install: build test
 clean:
 	go clean
 	rm -f dist/$(BINARY)
+	rm -fr vendor/
 
 uninstall:
 	@$(RM) -iv `which $(BINARY)`
 
 # FIXME: TODO: this micro-osd script leaves ceph-mds laying around -- fix it up
-test:
+test: vendor
 	TMP_DIR=$$(mktemp -d) && \
 		./micro-osd.sh $$TMP_DIR && \
 		export CEPH_CONF=$${TMP_DIR}/ceph.conf && \
@@ -68,7 +76,7 @@ test:
 
 # use existing ceph installation instead of micro-osd.sh - expecting CEPH_CONF to be set ...
 CEPH_CONF ?= /etc/ceph/ceph.conf
-local_test:
+local_test: vendor
 	@echo "Using CEPH_CONF=$(CEPH_CONF)"
 	test -n "${CEPH_CONF}" && \
 		$(SUDO) rbd ls && \

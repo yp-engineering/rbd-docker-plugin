@@ -8,12 +8,6 @@
   version = "v0.4.5"
 
 [[projects]]
-  name = "github.com/Sirupsen/logrus"
-  packages = ["."]
-  revision = "f006c2ac4710855cf0f916dd6b77acf6b048dc6e"
-  version = "v1.0.3"
-
-[[projects]]
   name = "github.com/coreos/go-systemd"
   packages = ["activation"]
   revision = "d2196463941895ee908e13531a23a39feb9e1243"
@@ -28,20 +22,13 @@
 [[projects]]
   name = "github.com/docker/go-connections"
   packages = ["sockets"]
-  revision = "990a1a1a70b0da4c4cb70e117971a4f0babfbf1a"
-  version = "v0.2.1"
+  revision = "3ede32e2033de7505e6500d6c868c2b9ed9f169d"
 
 [[projects]]
   branch = "master"
   name = "github.com/docker/go-plugins-helpers"
   packages = ["sdk","volume"]
   revision = "a9ef19c479cb60e751efa55f7f2b265776af1abf"
-
-[[projects]]
-  name = "github.com/opencontainers/runc"
-  packages = ["libcontainer/user"]
-  revision = "baf6536d6259209c3edfa2b22237af82942d3dfa"
-  version = "v0.1.1"
 
 [[projects]]
   name = "github.com/pmezard/go-difflib"
@@ -57,12 +44,6 @@
 
 [[projects]]
   branch = "master"
-  name = "golang.org/x/crypto"
-  packages = ["ssh/terminal"]
-  revision = "eb71ad9bd329b5ac0fd0148dd99bd62e8be8e035"
-
-[[projects]]
-  branch = "master"
   name = "golang.org/x/net"
   packages = ["proxy"]
   revision = "57efc9c3d9f91fb3277f8da1cff370539c4d3dc5"
@@ -70,7 +51,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
-  packages = ["unix","windows"]
+  packages = ["windows"]
   revision = "2d6f6f883a06fc0d5f4b14a81e4c28705ea64c15"
 
 [solve-meta]

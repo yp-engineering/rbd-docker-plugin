@@ -28,3 +28,12 @@
 [[constraint]]
   name = "github.com/stretchr/testify"
   version = "1.1.4"
+
+[[constraint]]
+  name = "github.com/docker/go-connections"
+  # NOTE: these are broken but requested by another dep:
+  #revision = "990a1a1a70b0da4c4cb70e117971a4f0babfbf1a"
+  #version = "v0.2.1"
+  # NOTE: This rev of master works:
+  ##revision = "3ede32e2033de7505e6500d6c868c2b9ed9f169d"
+  revision = "3ede32e2033de7505e6500d6c868c2b9ed9f169d"
