@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	dkvolume "github.com/docker/go-plugins-helpers/volume"
+	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,15 +37,13 @@ func TestMain(m *testing.M) {
 		"",
 		"admin",
 		"rbd",
-		dkvolume.DefaultDockerRootDirectory,
+		volume.DefaultDockerRootDirectory,
 		cephConf,
-		false,
 	)
-	defer testDriver.shutdown()
 
-	handler := dkvolume.NewHandler(testDriver)
+	handler := volume.NewHandler(testDriver)
 	// Serve won't return so spin off routine
-	go handler.ServeUnix("", TEST_SOCKET_PATH)
+	go handler.ServeUnix(TEST_SOCKET_PATH, 0)
 
 	os.Exit(m.Run())
 }
