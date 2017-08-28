@@ -3,4 +3,4 @@
 // license that can be found in the LICENSE file.
 package main
 
-const VERSION = "2.0.0"
+const VERSION = "2.0.1"

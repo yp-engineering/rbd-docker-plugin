@@ -74,7 +74,7 @@ type cephRBDVolumeDriver struct {
 	pool    string             // ceph pool to use (default: rbd)
 	root    string             // scratch dir for mounts for this plugin
 	config  string             // ceph config file to read
-	volumes map[string]*Volume // track locally mounted volumes
+	volumes map[string]*Volume // track locally mounted volumes, key on mountpoint
 	m       *sync.Mutex        // mutex to guard operations that change volume maps or use conn
 }
 
@@ -389,6 +389,7 @@ func (d cephRBDVolumeDriver) Mount(r *volume.MountRequest) (*volume.MountRespons
 }
 
 // Get the list of volumes registered with the plugin.
+// Default returns Ceph RBD images in default pool.
 //
 // POST /VolumeDriver.List
 //
@@ -411,10 +412,12 @@ func (d cephRBDVolumeDriver) List() (*volume.ListResponse, error) {
 	for _, name := range volNames {
 		apiVol := &volume.Volume{Name: name}
 
-		// for each registered vol, add Mountpoint
-		mounted, ok := d.volumes[name]
+		// for each known mounted vol, add Mountpoint
+		// FIXME: assumes default rbd pool - should we keep track of all pools? query each? just assume one pool?
+		mount := d.mountpoint(d.pool, name)
+		_, ok := d.volumes[mount]
 		if ok {
-			apiVol.Mountpoint = d.mountpoint(mounted.Pool, mounted.Name)
+			apiVol.Mountpoint = mount
 		}
 
 		vols = append(vols, apiVol)
@@ -465,9 +468,13 @@ func (d cephRBDVolumeDriver) Get(r *volume.GetRequest) (*volume.GetResponse, err
 		delete(d.volumes, mountPath)
 		return nil, fmt.Errorf("Image %s does not exist", r.Name)
 	}
-	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
 
-	// TODO: what to do if the mountpoint registry (d.volumes) has a different name?
+	// for each mounted vol, keep Mountpoint
+	_, ok := d.volumes[mountPath]
+	if !ok {
+		mountPath = ""
+	}
+	log.Printf("INFO: Get request(%s) => %s", name, mountPath)
 
 	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: mountPath}}, nil
 }
@@ -486,6 +493,7 @@ func (d cephRBDVolumeDriver) Get(r *volume.GetRequest) (*volume.GetResponse, err
 //    made available, and/or a string error if an error occurred.
 //
 // NOTE: this method does not require the Ceph connection
+// FIXME: does volume API require error if Volume requested does not exist/is not mounted? Similar to List/Get leaving mountpoint empty?
 //
 func (d cephRBDVolumeDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	// parse full image name for optional/default pieces
