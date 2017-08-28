@@ -8,6 +8,13 @@ We attempt to adhere to [Semantic Versioning](http://semver.org/).
 ### Removed
 ### Changed
 
+## [2.0.1] - 2017-08-28
+### Changed
+- fixed List and Get methods to only return Mountpoint value if volume is
+actually mounted.  Hopefully this matches the Docker Volume API better and
+fixes some spurious volume creation (See #3, #6, #12, and
+yp-engineering/rbd-docker-plugin#36)
+
 ## [2.0.0] - 2017-08-25
 ### Added
 - add golang/dep support for a repeatable build
