@@ -14,7 +14,6 @@ INSTALL?=install
 #TPKG_VERSION=$(VERSION)-2
 TPKG_VERSION=$(VERSION)
 
-
 BINARY=rbd-docker-plugin
 PKG_SRC=main.go driver.go version.go
 PKG_SRC_TEST=$(PKG_SRC) driver_test.go unlock_test.go
