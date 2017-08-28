@@ -49,11 +49,17 @@ Clone the repo and use the Makefile:
 
     make
 
-To get `dist/rbd-docker-plugin` binary.  Or the equivalent shell commands:
+To get `dist/rbd-docker-plugin` binary.
+
+Or the equivalent shell commands:
 
     go get -u github.com/golang/dep/cmd/dep
     dep ensure
     go build -v -x -o dist/rbd-docker-plugin .
+
+If none of the dependencies has changed (??) you might be able to get away with:
+
+    go get github.com/porcupie/rbd-docker-plugin
 
 
 ### Commandline Options
@@ -190,8 +196,6 @@ create RBD images with XFS filesystem.
 
 - [Legacy Plugins](https://docs.docker.com/engine/extend/legacy_plugins/)
   - [Volume plugins](https://docs.docker.com/engine/extend/plugins_volume/)
-
-- Ceph Rados, RBD golang lib: https://github.com/ceph/go-ceph
 
 # Packaging
 
