@@ -6,10 +6,14 @@ set -u
 
 SYSTEMD_SERVICE=rbd-docker-plugin.service
 SYSTEMD_CONF=$TPKG_HOME/etc/systemd/system/$SYSTEMD_SERVICE
-
 UPSTART_CONF=$TPKG_HOME/etc/init/rbd-docker-plugin.conf
-
 LOGROTATE_CONF=$TPKG_HOME/etc/logrotate.d/rbd-docker-plugin_logrotate
+
+# do some replacements to make this tpkg more relocatable
+if [ "$TPKG_HOME" != "/home/ops" ]; then
+    sed -i.orig -e "s|/home/ops|$TPKG_HOME|g" "$SYSTEMD_CONF"
+    sed -i.orig -e "s|/home/ops|$TPKG_HOME|g" "$UPSTART_CONF"
+fi
 
 # centos 7.x / systemd
 if UNIT_DIR=$(pkg-config systemd --variable=systemdsystemunitdir); then

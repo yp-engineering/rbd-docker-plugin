@@ -7,6 +7,12 @@ set -u
 SYSTEMD_SVC=rbd-docker-plugin.service
 UPSTART_INIT=/etc/init/rbd-docker-plugin.conf
 LOGROTATE_CONF=/etc/logrotate.d/rbd-docker-plugin_logrotate
+CRON_JOB=/etc/cron.d/rbd-docker-plugin-checks
+
+# remove cron check
+if test -f "$CRON_JOB" ; then
+    rm -vf "$CRON_JOB"
+fi
 
 # centos 7.x / systemd
 if UNIT_DIR=$(pkg-config systemd --variable=systemdsystemunitdir); then

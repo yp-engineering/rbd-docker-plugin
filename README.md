@@ -1,49 +1,66 @@
-# Ceph Rados Block Device Docker VolumeDriver Plugin
+# Simple Ceph RBD Docker VolumeDriver Plugin
 
 * Use Case: Persistent Storage for a Single Docker Container
-  * an RBD Image can only be used by 1 Docker Container at a time
+  * one RBD Image can only be used by one Docker Container at a time
 
 * Plugin is a separate process running alongside Docker Daemon
-  * plugin can only be configured for a single Ceph User (currently no 
-    good way to pass things from docker -> plugin, get only volume name)
+  * plugin can be configured for a single Ceph User
   * run multiple plugin instances for varying configs (ceph user, default pool, default size)
-  * can pass extra config via volume name to override default pool and creation size:
+  * OPTIONAL: pass extra config via volume name to override default pool and creation size:
     * docker run --volume-driver rbd -v poolname/imagename@size:/mnt/disk1 ...
 
-* plugin supports all Docker VolumeDriver Plugin API commands:
+* plugin supports all Docker VolumeDriver Plugin API commands (Volume Plugin API v1.12.x)
   * Create - can provision Ceph RBD Image in a pool of a certain size
     * controlled by `--create` boolean flag (default false)
     * default size from `--size` flag (default 20480 = 20GB)
   * Mount - Locks, Maps and Mounts RBD Image to the Host system
   * Unmount - Unmounts, Unmaps and Unlocks the RBD Image on request
   * Remove - Removes (destroys) RBD Image on request
-    * only called for `docker run --rm -v ...` or `docker rm -v ... container` 
-    * controlled by `--remove` boolean flag (default false)
-    * if remove is true -> image is removed
-    * if remove is false -> image is renamed with _zz_ prefix for later culling
-
+    * only called for `docker run --rm -v ...` or `docker rm -v ...`
+    * action controlled by plugin's `--remove` flag, which can be one of three values:
+      - ''ignore'' - the call to delete the ceph rbd volume is ignored (default)
+      - ''rename'' - will cause image to be renamed with _zz_ prefix for later culling
+      - ''delete'' - will actually delete ceph rbd image (destructive)
+  * Get, List - Return information on accessible RBD volumes
 
 ## Plugin Setup
 
-Plugin is a standalone process and places a Socket file in a known 
-location.  Generally need to start this before running Docker.  It does 
-not daemonize as it is expected to be controlled by systemd, so if you 
-need it in the background, use normal shell process control (&).
+Plugin is a standalone process and places a Socket file in a known location;
+needs to start before Docker.  It does not daemonize by default, so if you need
+it in the background, use normal shell process control (&).
 
-The socket has a name (sans .sock) which is used to refer to the plugin
-via the `--volume-driver=name` docker CLI option, allowing multiple
+The driver has a name, also used to name the socket, which is used to refer to
+the plugin via the `--volume-driver=name` docker CLI option, allowing multiple
 uniquely named plugin instances with different default configurations.
 
-The default name for the socket is "rbd", so you would refer to 
-`--volume-driver rbd` from docker.
+For the default name is "rbd", use `--volume-driver rbd` from docker.
 
 General build/run requirements:
-* librados2-devel and librbd1-devel for go-ceph
-* /usr/bin/rbd for mapping and unmapping to kernel
-* /usr/sbin/mkfs.xfs for fs creation
+* /usr/bin/rbd for manipulating Ceph RBD images
+* /usr/sbin/mkfs.xfs for fs creation (default fstype)
 * /usr/bin/mount and /usr/bin/umount
+* golang/dep tool
 
-Tested with Ceph version 0.94.2 on Centos 7.1 host with Docker 1.8.
+Tested with Ceph version 0.94.2 on Centos 7.1 host with Docker 1.12
+
+### Building rbd-docker-plugin
+
+Clone the repo and use the Makefile:
+
+    make
+
+To get `dist/rbd-docker-plugin` binary.
+
+Or the equivalent shell commands:
+
+    go get -u github.com/golang/dep/cmd/dep
+    dep ensure
+    go build -v -x -o dist/rbd-docker-plugin .
+
+If none of the dependencies has changed (??) you might be able to get away with:
+
+    go get github.com/porcupie/rbd-docker-plugin
+
 
 ### Commandline Options
 
@@ -54,12 +71,11 @@ Tested with Ceph version 0.94.2 on Centos 7.1 host with Docker 1.8.
       --logdir="/var/log": Logfile directory for RBD Docker Plugin
       --mount="/var/lib/docker/volumes": Mount directory for volumes on host
       --name="rbd": Docker plugin name for use on --volume-driver option
-      --plugin-dir="/run/docker/plugins": Docker plugin directory for socket
       --pool="rbd": Default Ceph Pool for RBD operations
       --remove=false: Can Remove (destroy) RBD Images (default: false, volume will be renamed zz_name)
       --size=20480: RBD Image size to Create (in MB) (default: 20480=20GB
 
-### Running Plugin
+### Start the Plugin
 
 Start with the default options:
 
@@ -67,7 +83,6 @@ Start with the default options:
 * no creation or removal of volumes
 
     sudo rbd-docker-plugin
-    # docker run --volume-driver rbd -v ...
 
 For Debugging: send log to STDERR:
 
@@ -86,16 +101,20 @@ To allow creation and removal:
 
     sudo rbd-docker-plugin --create --remove
 
+Then you would be able to use RBD volumes via Docker CLI:
+
+    docker run --volume-driver rbd -v ...
+
 ### Testing
 
-Use with docker 1.8+ which has the `--volume-driver` support.
+Can test using docker engine 1.8+ which has `--volume-driver` support.
 
 * https://docker.com/
 
-Alternatively, you can POST json to the socket to test the functionality
-manually.  If your curl is new enough (v7.40+), you can use the
-`--unix-socket` option and syntax.  You can also use [this golang
-version](https://github.com/Soulou/curl-unix-socket) instead:
+Alternatively, you can POST json to the socket to manually test.  If your curl
+is new enough (v7.40+), you can use the `--unix-socket` option and syntax.  You
+can also use [this golang version](https://github.com/Soulou/curl-unix-socket)
+instead:
 
     go get github.com/Soulou/curl-unix-socket
 
@@ -140,24 +159,25 @@ Once you have that you can POST json to the plugin:
 
 ## Examples
 
-If you need persistent storage for your application container, you can use a Ceph Block Device as a persistent disk.
+If you need persistent storage for your application container, you can use a
+Ceph Rados Block Device (RBD) as a persistent disk.
 
 You can provision the Block Device and Filesystem first, or allow a
-sufficiently configured Plugin instance create it for you.
-This plugin can create RBD images with XFS filesystem.
+sufficiently configured Plugin instance create it for you.  This plugin can
+create RBD images with XFS filesystem.
 
 1. (Optional) Provision RBD Storage yourself
   * `sudo rbd create --size 1024 foo`
   * `sudo rbd map foo`  => /dev/rbd1
   * `sudo mkfs.xfs /dev/rbd1`
   * `sudo rbd unmap /dev/rbd1`
-2. Or Run the RBD Docker Plugin with `--create` option flag
+2. Or Run the RBD Docker Plugin with `--create` option flag and just request a volume
   * `sudo rbd-docker-plugin --create`
-3. Requesting and Using Storage
+3. Requesting and Using Volumes
   * `docker run --volume-driver=rbd --volume foo:/mnt/foo -it ubuntu /bin/bash`
-  * Volume will be locked, mapped and mounted to Host and bind-mounted to container at `/mnt/foo`
+  * Volume "foo" will be locked, mapped and mounted to Host and bind-mounted to container at `/mnt/foo`
   * When container exits, the volume will be unmounted, unmapped and unlocked
-  * You can control the RBD Pool and initial Size using this syntax:
+  * You can control the RBD Pool and initial Size using this syntax sugar:
     * foo@1024 => pool=rbd (default), image=foo, size 1GB
     * deep/foo =>  pool=deep, image=foo and default `--size` (20GB)
     * deep/foo@1024 => pool=deep, image=foo, size 1GB
@@ -165,44 +185,22 @@ This plugin can create RBD images with XFS filesystem.
 
 ### Misc
 
-* RBD Snapshots: `sudo rbd snap create --image foo --snap foosnap`
-* Resize RBD image:
+* Create RBD Snapshots: `sudo rbd snap create --image foo --snap foosnap`
+* Resize RBD Volume:
   * set max size: `sudo rbd resize --size 2048 --image foo`
   * map/mount and then fix XFS: `sudo xfs_growfs -d /mnt/foo`
 
-## TODO
-
-* add cluster config options to support non-default clusters
-* figure out how to test
-  * do we need a working ceph cluster?
-  * docker containers with ceph?
 
 ## Links
 
-### Docker API Documentation
 
-- [Experimental: Extend Docker with a Plugin](https://github.com/docker/docker/blob/master/experimental/plugins.md)
-- [Experimental: Docker Plugin API](https://github.com/docker/docker/blob/master/experimental/plugin_api.md)
-- [Experimental: Docker Volume Plugins](https://github.com/docker/docker/blob/master/experimental/plugins_volume.md)
-
-### Code Examples and Libraries
-
-- https://plugins-demo-2015.github.io
-- [Flocker Docker Plugin](https://docs.clusterhq.com/en/1.0.3/labs/docker-plugin.html)
-- VolumeDriver golang framework: https://github.com/docker/go-plugins-helpers/tree/master/volume
-- GlusterFS Example: https://github.com/calavera/docker-volume-glusterfs
-- KeyWhiz example: https://github.com/calavera/docker-volume-keywhiz
-- Ceph Rados, RBD golang lib: https://github.com/ceph/go-ceph
-
-Related Projects
-- https://github.com/AcalephStorage/docker-volume-ceph-rbd
-- https://github.com/contiv/volplugin
+- [Legacy Plugins](https://docs.docker.com/engine/extend/legacy_plugins/)
+  - [Volume plugins](https://docs.docker.com/engine/extend/plugins_volume/)
 
 # Packaging
 
-Using [tpkg](http://tpkg.github.io) package to distribute and specify 
-native package dependencies.  Tested with Centos 7.1 and yum/rpm 
-packages.
+Using [tpkg](http://tpkg.github.io) to distribute and specify native package
+dependencies.  Tested with Centos 7.1 and yum/rpm packages.
 
 
 # License

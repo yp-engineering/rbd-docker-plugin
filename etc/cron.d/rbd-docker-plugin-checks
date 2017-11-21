@@ -1,0 +1,11 @@
+SHELL=/bin/bash
+TPKG_HOME=/home/ops
+
+
+# Uncomment to enable automated Ceph RBD Docker plugin checks
+
+# check for /etc/ceph configs and keys
+#0 0 * * * root $TPKG_HOME/bin/check-ceph-rbd-docker-plugin.sh
+
+# check for updated tpkg once a night (randomized start 0-30m)
+#0 0 * * * root sleep $(( RANDOM \% 1800 )); TPKG_HOME=$TPKG_HOME tpkg -n -u rbd-docker-plugin >& /dev/null

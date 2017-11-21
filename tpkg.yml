@@ -1,17 +1,19 @@
 name: rbd-docker-plugin
 version: main.VERSION
-package_version: 1
-maintainer: aavilla@yp.com
+#package_version: 1
+maintainer: dm9831@yp.com
 description: A Docker VolumeDriver Plugin that can manipulate Ceph RBD images.
+# FIXME: not sure what happened but yp tpkg can no longer do this - some ruby error deep in bowels
+# /usr/lib/ruby/site_ruby/1.8/tpkg/os/redhat.rb:71:in `block in available_native_packages': available_native_packages error running yum (RuntimeError)
 # RPMS needed for Ceph .so libs
-dependencies:
-  - name: ceph
-    minimum_version: 0.94
-    native: true
-  - name: librados2
-    native: true
-  - name: librbd1
-    native: true
-  - name: docker-engine
-    minimum_version: 1.8
-    native: true
+#dependencies:
+#  - name: ceph
+#    minimum_version: 0.94
+#    native: true
+#  - name: librados2
+#    native: true
+#  - name: librbd1
+#    native: true
+#  - name: docker-engine
+#    minimum_version: 1.8
+#    native: true
